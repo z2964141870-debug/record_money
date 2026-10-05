@@ -1,0 +1,41 @@
+{
+  "name": "record-money",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "build": "tsc --noEmit && tsc -p tsconfig.server.json && vite build",
+    "start": "tsx src/server.ts",
+    "test": "tsx --test test/*.test.ts",
+    "check": "tsc --noEmit",
+    "service:install": "tsx tools/service.ts install",
+    "service:stop": "tsx tools/service.ts stop",
+    "service:uninstall": "tsx tools/service.ts uninstall",
+    "backup": "tsx tools/backup.ts",
+    "restore": "tsx tools/backup.ts restore"
+  },
+  "dependencies": {
+    "@fastify/static": "^10.1.5",
+    "@larksuiteoapi/node-sdk": "1.74.0",
+    "better-sqlite3": "13.0.3",
+    "dotenv": "^17.2.0",
+    "fastify": "^5.6.0",
+    "lucide-react": "^0.468.0",
+    "openai": "^6.0.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.1.0"
+  }
+}

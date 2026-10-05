@@ -1,0 +1,63 @@
+import Database from 'better-sqlite3';
+import { chmodSync } from 'node:fs';
+import { join } from 'node:path';
+import { dataDir } from './config.js';
+export function openDb(path = join(dataDir, 'ledger.sqlite')) {
+  const db = new Database(path);
+  db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
+  db.pragma('busy_timeout = 5000');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS entries (
+      id INTEGER PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('expense','income','refund','transfer')),
+      amount INTEGER NOT NULL CHECK(amount > 0), date TEXT NOT NULL, category TEXT NOT NULL,
+      subcategory TEXT NOT NULL DEFAULT '', merchant TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
+      parent_id INTEGER REFERENCES entries(id), source TEXT NOT NULL DEFAULT 'web', message_id TEXT,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL, cancelled_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS entries_date ON entries(date);
+    CREATE INDEX IF NOT EXISTS entries_parent ON entries(parent_id);
+    CREATE TABLE IF NOT EXISTS accounts (
+      id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, platform TEXT NOT NULL DEFAULT '',
+      kind TEXT NOT NULL CHECK(kind IN ('cash','investment','locked','liability')),
+      opening_balance INTEGER, available_date TEXT, note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS account_audit (id INTEGER PRIMARY KEY, account_id INTEGER NOT NULL,
+      before_json TEXT, after_json TEXT NOT NULL, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY, entry_id INTEGER, action TEXT NOT NULL, before_json TEXT, after_json TEXT, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS messages (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL, text TEXT NOT NULL, reply_to TEXT,
+      received_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
+      next_attempt INTEGER NOT NULL DEFAULT 0, result TEXT, error TEXT
+    );
+    CREATE TABLE IF NOT EXISTS confirmations (id INTEGER PRIMARY KEY, message_id TEXT NOT NULL, user_id TEXT NOT NULL, action_json TEXT NOT NULL, created_at TEXT NOT NULL, resolved_at TEXT);
+    CREATE TABLE IF NOT EXISTS outbox (id INTEGER PRIMARY KEY, user_id TEXT NOT NULL, text TEXT NOT NULL, dedup TEXT UNIQUE NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, next_attempt INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS reports (id INTEGER PRIMARY KEY, period TEXT NOT NULL, start TEXT NOT NULL, end TEXT NOT NULL, cutoff TEXT NOT NULL,
+      text TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(period,start,end));
+  `);
+  const entryColumns = new Set((db.pragma('table_info(entries)') as { name: string }[]).map(c => c.name));
+  for (const column of ['account_id', 'to_account_id']) {
+    if (!entryColumns.has(column)) db.exec(`ALTER TABLE entries ADD COLUMN ${column} INTEGER REFERENCES accounts(id)`);
+  }
+  const confirmationSchema = db.prepare("SELECT sql FROM sqlite_master WHERE name='confirmations'").get() as { sql: string };
+  if (confirmationSchema.sql.includes('message_id TEXT UNIQUE')) {
+    db.transaction(() => db.exec(`
+      ALTER TABLE confirmations RENAME TO confirmations_legacy;
+      CREATE TABLE confirmations (id INTEGER PRIMARY KEY, message_id TEXT NOT NULL, user_id TEXT NOT NULL, action_json TEXT NOT NULL, created_at TEXT NOT NULL, resolved_at TEXT);
+      INSERT INTO confirmations SELECT * FROM confirmations_legacy;
+      DROP TABLE confirmations_legacy;
+    `))();
+  }
+  if (path !== ':memory:') chmodSync(path, 0o600);
+  return db;
+}
+export type DB = ReturnType<typeof openDb>;
+export function setting(db: DB, key: string, fallback = ''): string {
+  return (db.prepare('SELECT value FROM settings WHERE key=?').get(key) as { value: string } | undefined)?.value ?? fallback;
+}
+export function setSetting(db: DB, key: string, value: string) {
+  db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key, value);
+}

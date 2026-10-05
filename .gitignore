@@ -1,0 +1,12 @@
+data/*
+!data/.gitkeep
+logs/*
+!logs/.gitkeep
+script/node_modules/
+script/dist/
+script/build/
+.DS_Store
+*.env
+!script/config.example.env
+*.log
+coverage/

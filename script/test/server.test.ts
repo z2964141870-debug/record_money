@@ -1,0 +1,21 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { openDb } from '../src/db.js';
+import { config } from '../src/config.js';
+import { buildServer } from '../src/server.js';
+test('local web access guards, input validation and shared ledger API', async () => {
+  const { app } = await buildServer(openDb(':memory:')); const headers = { host: '127.0.0.1:' + config.port };
+  const bootstrap = await app.inject({ url: '/api/bootstrap', headers }); assert.equal(bootstrap.statusCode, 200);
+  assert.equal((await app.inject({ url: '/api/status', headers: { host: 'evil.test' } })).statusCode, 403);
+  assert.equal((await app.inject({ url: '/api/bootstrap', headers: { ...headers, origin: 'https://evil.test' } })).statusCode, 403);
+  const value = { kind: 'expense', amount: 2000, date: '2026-10-05', category: '餐饮' };
+  assert.equal((await app.inject({ method: 'POST', url: '/api/entries', headers, payload: value })).statusCode, 403);
+  const auth = { ...headers, 'x-ledger-token': bootstrap.json().csrf };
+  const added = await app.inject({ method: 'POST', url: '/api/entries', headers: auth, payload: value }); assert.equal(added.statusCode, 200);
+  assert.equal((await app.inject({ url: '/api/entries', headers })).json().length, 1);
+  assert.equal((await app.inject({ method: 'PUT', url: '/api/entries/' + added.json().id, headers: auth, payload: { ...value, amount: 1800 } })).statusCode, 200);
+  assert.equal((await app.inject({ url: '/api/summary?start=2026-10-01&end=2026-10-31', headers })).json().netExpense, 1800);
+  assert.equal((await app.inject({ method: 'DELETE', url: '/api/entries/' + added.json().id, headers: auth })).statusCode, 200);
+  assert.equal((await app.inject({ url: '/api/entries', headers })).json().length, 0);
+  await app.close();
+});
