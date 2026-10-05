@@ -46,6 +46,7 @@ test('agent account operations and linked transfer execute atomically', () => {
     { type: 'add', kind: 'transfer', amount: '200', account: '支付宝余额', to_account: '我的基金' },
   ]);
   assert.equal(accountOverview(db).assets, 100000); assert.equal(accountOverview(db).investment, 20000);
+  assert.equal(accountOverview(db, '未知平台').accounts.length, 0);
   receiveMessage(db, 'bad', 'local', '错误多操作');
   assert.throws(() => applyActions(db, 'bad', [
     { type: 'account_update', account: '支付宝余额', balance: '9999' },

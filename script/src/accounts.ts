@@ -47,8 +47,8 @@ export function saveAccount(db: DB, raw: unknown, id?: number) {
     return after;
   })();
 }
-export function accountOverview(db: DB) {
-  const accounts = listAccounts(db);
+export function accountOverview(db: DB, platform?: string) {
+  const accounts = listAccounts(db).filter(a => !platform || a.platform === platform);
   const sum = (kinds: string[]) => accounts.filter(a => kinds.includes(a.kind)).reduce((n, a) => n + (a.balance ?? 0), 0);
   const assets = sum(['cash', 'investment', 'locked']), debt = sum(['liability']);
   return { accounts, assets, debt, net: assets - debt, cash: sum(['cash']), investment: sum(['investment']), locked: sum(['locked']), unknown: accounts.filter(a => a.balance === null).length };

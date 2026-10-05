@@ -2,6 +2,7 @@ import * as lark from '@larksuiteoapi/node-sdk';
 import { config } from './config.js';
 import { setting, setSetting, type DB } from './db.js';
 import { processMessage, queueReply, receiveMessage } from './assistant.js';
+import { cancelObsoleteReminders } from './reminders.js';
 export type BotStatus = { state: string; lastReceived: string | null; lastSent: string | null; lastError: string | null };
 export function createBot(db: DB) {
   const status: BotStatus = { state: 'disabled', lastReceived: null, lastSent: null, lastError: null };
@@ -35,6 +36,7 @@ export function createBot(db: DB) {
         }
       }
       if (!config.feishuEnabled || !client) return;
+      cancelObsoleteReminders(db);
       const next = db.prepare("SELECT * FROM outbox WHERE status='pending' AND next_attempt<=? ORDER BY id LIMIT 1").get(Date.now()) as { id: number; user_id: string; text: string; attempts: number } | undefined;
       if (next && next.user_id === setting(db, 'owner')) {
         try {

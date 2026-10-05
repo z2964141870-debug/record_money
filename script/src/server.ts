@@ -13,6 +13,8 @@ import { processMessage, queueReply, receiveMessage, resolveConfirmation } from 
 import { reportText, runSchedule } from './reports.js';
 import { backup } from './backup.js';
 import { accountOverview, initializeAccounts, saveAccount } from './accounts.js';
+import { reminderSettings, runReminder, saveReminderSettings } from './reminders.js';
+import { runOperationRecords } from './operation-records.js';
 export async function buildServer(db = openDb()) {
   initializeAccounts(db);
   const app = Fastify({ logger: { level: 'info', redact: ['req.headers.authorization', 'req.body', 'res.body'] }, logController: new LogController({ disableRequestLogging: true }), bodyLimit: 100_000 });
@@ -50,7 +52,7 @@ export async function buildServer(db = openDb()) {
     pendingMessages: db.prepare("SELECT id,user_id,text,received_at,attempts,status,error FROM messages WHERE status!='done' ORDER BY received_at DESC LIMIT 100").all(),
     confirmations: db.prepare('SELECT * FROM confirmations WHERE resolved_at IS NULL ORDER BY id DESC').all().map(raw => { const c = raw as { action_json: string }; const saved = JSON.parse(c.action_json); return { ...c, action: saved.action, candidates: saved.candidates.map((id: number) => { try { return getEntry(db, id); } catch { return null; } }).filter(Boolean) }; }),
     outbox: (db.prepare("SELECT COUNT(*) AS n FROM outbox WHERE status='pending'").get() as { n: number }).n,
-    lastBackup: setting(db, 'backup_date'), dataDir, model: setting(db, 'model', config.model), reasoning: setting(db, 'reasoning', config.reasoning),
+    lastBackup: setting(db, 'backup_date'), dataDir, reminder: reminderSettings(db), model: setting(db, 'model', config.model), reasoning: setting(db, 'reasoning', config.reasoning),
     baseUrl: config.aiBaseUrl, aiConfigured: !!config.aiKey, feishuConfigured: !!config.appId && !!config.appSecret, appId: config.appId }));
   app.post('/api/bind', async req => {
     const { user } = z.object({ user: z.string().min(1).max(100) }).parse(req.body);
@@ -63,6 +65,7 @@ export async function buildServer(db = openDb()) {
     const input = z.object({ model: z.string().trim().min(1).max(100), reasoning: z.enum(['none', 'low', 'medium', 'high']) }).parse(req.body);
     setSetting(db, 'model', input.model); setSetting(db, 'reasoning', input.reasoning); return { ok: true };
   });
+  app.put('/api/reminders', async req => saveReminderSettings(db, req.body));
   app.post('/api/chat', async req => {
     const { text } = z.object({ text: z.string().trim().min(1).max(4000) }).parse(req.body); const id = 'web:' + randomUUID();
     receiveMessage(db, id, 'local', text);
@@ -101,7 +104,7 @@ export async function buildServer(db = openDb()) {
   const startBackground = () => {
     void bot.start();
     let ticking = false;
-    const tick = async () => { if (ticking) return; ticking = true; try { runSchedule(db); await backup(db); } catch { app.log.warn('Periodic task failed; check local storage'); } finally { ticking = false; } };
+    const tick = async () => { if (ticking) return; ticking = true; try { runReminder(db); runSchedule(db); runOperationRecords(db); await backup(db); } catch { app.log.warn('Periodic task failed; check local storage'); } finally { ticking = false; } };
     void tick(); timer = setInterval(() => { void tick(); }, 60000); timer.unref();
   };
   return { app, db, bot, startBackground };

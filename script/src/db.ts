@@ -33,6 +33,9 @@ export function openDb(path = join(dataDir, 'ledger.sqlite')) {
       next_attempt INTEGER NOT NULL DEFAULT 0, result TEXT, error TEXT
     );
     CREATE TABLE IF NOT EXISTS confirmations (id INTEGER PRIMARY KEY, message_id TEXT NOT NULL, user_id TEXT NOT NULL, action_json TEXT NOT NULL, created_at TEXT NOT NULL, resolved_at TEXT);
+    CREATE TABLE IF NOT EXISTS dialogue_pending (id INTEGER PRIMARY KEY, user_id TEXT NOT NULL, message_id TEXT NOT NULL,
+      question TEXT NOT NULL, actions_json TEXT NOT NULL, revision TEXT NOT NULL, created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL, resolved_at TEXT);
     CREATE TABLE IF NOT EXISTS outbox (id INTEGER PRIMARY KEY, user_id TEXT NOT NULL, text TEXT NOT NULL, dedup TEXT UNIQUE NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, next_attempt INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS reports (id INTEGER PRIMARY KEY, period TEXT NOT NULL, start TEXT NOT NULL, end TEXT NOT NULL, cutoff TEXT NOT NULL,

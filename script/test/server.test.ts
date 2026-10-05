@@ -17,5 +17,8 @@ test('local web access guards, input validation and shared ledger API', async ()
   assert.equal((await app.inject({ url: '/api/summary?start=2026-10-01&end=2026-10-31', headers })).json().netExpense, 1800);
   assert.equal((await app.inject({ method: 'DELETE', url: '/api/entries/' + added.json().id, headers: auth })).statusCode, 200);
   assert.equal((await app.inject({ url: '/api/entries', headers })).json().length, 0);
+  assert.equal((await app.inject({ method: 'PUT', url: '/api/reminders', headers: auth, payload: { enabled: true, time: '25:00' } })).statusCode, 400);
+  assert.equal((await app.inject({ method: 'PUT', url: '/api/reminders', headers: auth, payload: { enabled: false, time: '21:00' } })).statusCode, 200);
+  assert.deepEqual((await app.inject({ url: '/api/status', headers })).json().reminder, { enabled: false, time: '21:00' });
   await app.close();
 });

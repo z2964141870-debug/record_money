@@ -1,11 +1,13 @@
 import type { DB } from './db.js';
-import { type Action, parseText } from './ai.js';
+import { type Action, type LedgerAction, parseActions, parseText } from './ai.js';
+import { ledgerRevision, pendingDialogue } from './conversation.js';
+import { setSetting } from './db.js';
 import { cancelEntry, cents, createEntry, getEntry, listEntries, money, refunded, summary, today, updateEntry, type Entry } from './ledger.js';
 import { accountOverview, findAccount, saveAccount } from './accounts.js';
 export function queueReply(db: DB, user: string, text: string, dedup: string) {
   db.prepare('INSERT OR IGNORE INTO outbox(user_id,text,dedup,created_at) VALUES(?,?,?,?)').run(user, text, dedup, new Date().toISOString());
 }
-function candidates(db: DB, action: Action, replyTo?: string | null) {
+function candidates(db: DB, action: LedgerAction, replyTo?: string | null) {
   if (action.id) return [getEntry(db, action.id)];
   if (replyTo) {
     const linked = db.prepare('SELECT id FROM entries WHERE message_id=? AND cancelled_at IS NULL ORDER BY id DESC').all(replyTo) as { id: number }[];
@@ -19,10 +21,44 @@ function candidates(db: DB, action: Action, replyTo?: string | null) {
   return rows;
 }
 function applyAction(db: DB, action: Action, message: { id: string; user_id: string; reply_to?: string | null; received_at?: string }, permitId?: number): string {
+  if (action.type === 'reply') return action.text;
+  if (action.type === 'no_activity') {
+    setSetting(db, 'no_activity_date', today(message.received_at ? new Date(message.received_at) : undefined));
+    return '已记下今天无需记账提醒，不新增账目；明天仍按设置检查。';
+  }
+  if (action.type === 'propose') {
+    for (const item of action.actions) {
+      if (['update', 'cancel', 'refund'].includes(item.type) && !('id' in item && item.id)) throw new Error('待确认方案需明确账目编号');
+      if (item.type === 'account_update') {
+        if (!item.account) throw new Error('待确认方案需明确账户名称');
+        findAccount(db, item.account);
+      }
+    }
+    const now = new Date();
+    db.prepare('UPDATE dialogue_pending SET resolved_at=? WHERE user_id=? AND resolved_at IS NULL').run(now.toISOString(), message.user_id);
+    db.prepare('INSERT INTO dialogue_pending(user_id,message_id,question,actions_json,revision,created_at,expires_at) VALUES(?,?,?,?,?,?,?)').run(message.user_id, message.id, action.question, JSON.stringify(action.actions), ledgerRevision(db), now.toISOString(), new Date(now.getTime() + 86400000).toISOString());
+    return action.question + '\n回复“可以，就这样”确认，或回复“取消这个方案”。';
+  }
+  if (action.type === 'confirm_pending' || action.type === 'dismiss_pending') {
+    const pending = pendingDialogue(db, message.user_id);
+    if (!pending) return '当前没有有效的待确认方案，请说明要处理的内容。';
+    if (action.type === 'dismiss_pending') {
+      db.prepare('UPDATE dialogue_pending SET resolved_at=? WHERE id=?').run(new Date().toISOString(), pending.id);
+      return '已取消这个方案，账目和账户未修改。';
+    }
+    if (pending.revision !== ledgerRevision(db)) {
+      db.prepare('UPDATE dialogue_pending SET resolved_at=? WHERE id=?').run(new Date().toISOString(), pending.id);
+      return '方案提出后账本已有变化，请重新说明或核对操作，避免覆盖新记录。';
+    }
+    const operations = parseActions({ actions: JSON.parse(pending.actions_json) });
+    const result = operations.map(a => applyAction(db, a, message)).join('\n\n');
+    db.prepare('UPDATE dialogue_pending SET resolved_at=? WHERE id=?').run(new Date().toISOString(), pending.id);
+    return result;
+  }
   if (action.type === 'clarify') return action.question || '请补充金额和用途。';
   if (action.type === 'accounts_query') {
-    const s = accountOverview(db);
-    return `已知资产 ${money(s.assets)} 元 · 欠款 ${money(s.debt)} 元 · 净资产 ${money(s.net)} 元\n现金 ${money(s.cash)} 元 · 投资 ${money(s.investment)} 元 · 锁定 ${money(s.locked)} 元\n${s.accounts.map(a => `${a.name}：${a.balance === null ? '待填写' : money(a.balance) + ' 元'}${a.available_date ? ' · 解锁 ' + a.available_date : ''}`).join('\n')}\n${s.unknown} 个账户金额待填写，汇总仅含已知金额。`;
+    const s = accountOverview(db, action.platform);
+    return `${action.platform ? action.platform + '\n' : ''}已知资产 ${money(s.assets)} 元 · 欠款 ${money(s.debt)} 元 · 净资产 ${money(s.net)} 元\n现金 ${money(s.cash)} 元 · 投资 ${money(s.investment)} 元 · 锁定 ${money(s.locked)} 元\n${s.accounts.map(a => `${a.name}：${a.balance === null ? '待填写' : money(a.balance) + ' 元'}${a.available_date ? ' · 解锁 ' + a.available_date : ''}`).join('\n')}\n${s.unknown} 个账户金额待填写，汇总仅含已知金额。`;
   }
   if (action.type === 'account_create' || action.type === 'account_update') {
     if (!action.account) throw new Error('请提供完整账户名称');
@@ -37,7 +73,7 @@ function applyAction(db: DB, action: Action, message: { id: string; user_id: str
     }
     const a = saveAccount(db, { name: before?.name || action.account, kind: action.account_kind || before?.kind,
       platform: action.platform ?? before?.platform ?? '', balance, available_date: action.available_date !== undefined ? action.available_date : before?.available_date ?? null, note: action.note ?? before?.note ?? '' }, before?.id);
-    return `已${before ? '更新' : '创建'}账户 ${a.name} · ${a.balance === null ? '金额待填写' : money(a.balance) + ' 元'}${a.available_date ? ' · 解锁 ' + a.available_date : ''}`;
+    return `已${before ? '更新' : '创建'}账户 ${a.name} · ${a.balance === null ? '金额待填写' : money(a.balance) + ' 元'}${a.platform ? ' · ' + a.platform : ''}${a.available_date ? ' · 解锁 ' + a.available_date : ''}${a.note ? '\n备注：' + a.note : ''}`;
   }
   if (action.type === 'query') {
     const start = action.start || today().slice(0, 7) + '-01', end = action.end || today();
@@ -107,6 +143,15 @@ export function processMessage(db: DB, id: string): Promise<string> {
 async function processNextMessage(db: DB, id: string) {
   const message = db.prepare('SELECT * FROM messages WHERE id=?').get(id) as { user_id: string; text: string; received_at: string; status: string; result: string };
   if (message.status === 'done') return message.result;
+  const normalized = message.text.trim().replace(/[，。！？!?,.\s]/g, '');
+  if (['今天没有收支', '今天无收支', '今天不用提醒'].includes(normalized)) return applyActions(db, id, [{ type: 'no_activity' }]);
+  if (pendingDialogue(db, message.user_id)) {
+    if (/^(可以(的)?(就这样)?|好的?(就这样)?|就这样|确认|确认执行|同意)$/.test(normalized)) return applyActions(db, id, [{ type: 'confirm_pending' }]);
+    if (/^(取消(这个方案)?|不用了|不同意|先不执行)$/.test(normalized)) return applyActions(db, id, [{ type: 'dismiss_pending' }]);
+  } else if (/^(可以(的)?(就这样)?|好的?(就这样)?|就这样|确认|确认执行|同意)$/.test(normalized)) {
+    const latest = db.prepare("SELECT id FROM messages WHERE user_id=? AND status='done' AND rowid<(SELECT rowid FROM messages WHERE id=?) ORDER BY rowid DESC LIMIT 1").get(message.user_id, id) as { id: string } | undefined;
+    if (latest && db.prepare('SELECT id FROM dialogue_pending WHERE message_id=? AND user_id=?').get(latest.id, message.user_id)) return applyActions(db, id, [{ type: 'confirm_pending' }]);
+  }
   const choice = message.text.match(/^\s*选择\s*C(\d+)\s*#(\d+)\s*$/i);
   if (choice) return db.transaction(() => {
     const result = resolveConfirmation(db, Number(choice[1]), Number(choice[2]), message.user_id);
@@ -114,6 +159,6 @@ async function processNextMessage(db: DB, id: string) {
     if (message.user_id !== 'local') queueReply(db, message.user_id, result, 'message:' + id);
     return result;
   })();
-  const actions = await parseText(db, message.text, today(new Date(message.received_at)));
+  const actions = await parseText(db, message.text, today(new Date(message.received_at)), { user: message.user_id, messageId: id });
   return applyActions(db, id, actions);
 }
