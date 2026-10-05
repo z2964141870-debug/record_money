@@ -4,6 +4,9 @@ import { ledgerRevision, pendingDialogue } from './conversation.js';
 import { setSetting } from './db.js';
 import { cancelEntry, cents, createEntry, getEntry, listEntries, money, refunded, summary, today, updateEntry, type Entry } from './ledger.js';
 import { accountOverview, findAccount, saveAccount } from './accounts.js';
+import { domainSchema, applyDomain, type DomainAction } from './domain-actions.js';
+import { findPossession } from './possessions.js';
+import { extractImageText } from './images.js';
 export function queueReply(db: DB, user: string, text: string, dedup: string) {
   db.prepare('INSERT OR IGNORE INTO outbox(user_id,text,dedup,created_at) VALUES(?,?,?,?)').run(user, text, dedup, new Date().toISOString());
 }
@@ -22,6 +25,11 @@ function candidates(db: DB, action: LedgerAction, replyTo?: string | null) {
 }
 function applyAction(db: DB, action: Action, message: { id: string; user_id: string; reply_to?: string | null; received_at?: string }, permitId?: number): string {
   if (action.type === 'reply') return action.text;
+  const domain = domainSchema.safeParse(action);
+  if (domain.success) return applyDomain(db,domain.data,message);
+  return applyLedgerAction(db,action as Exclude<Action,DomainAction|{type:'reply';text:string}>,message,permitId);
+}
+function applyLedgerAction(db: DB, action: Exclude<Action,DomainAction|{type:'reply';text:string}>, message: { id: string; user_id: string; reply_to?: string | null; received_at?: string }, permitId?: number): string {
   if (action.type === 'no_activity') {
     setSetting(db, 'no_activity_date', today(message.received_at ? new Date(message.received_at) : undefined));
     return '已记下今天无需记账提醒，不新增账目；明天仍按设置检查。';
@@ -33,10 +41,15 @@ function applyAction(db: DB, action: Action, message: { id: string; user_id: str
         if (!item.account) throw new Error('待确认方案需明确账户名称');
         findAccount(db, item.account);
       }
+      if (item.type === 'possession_update') {
+        findPossession(db,item.name);
+      }
+      if (['loan_update','loan_draw','loan_repay','loan_installment'].includes(item.type) && 'name' in item && item.name) findAccount(db,item.name);
     }
     const now = new Date();
     db.prepare('UPDATE dialogue_pending SET resolved_at=? WHERE user_id=? AND resolved_at IS NULL').run(now.toISOString(), message.user_id);
     db.prepare('INSERT INTO dialogue_pending(user_id,message_id,question,actions_json,revision,created_at,expires_at) VALUES(?,?,?,?,?,?,?)').run(message.user_id, message.id, action.question, JSON.stringify(action.actions), ledgerRevision(db), now.toISOString(), new Date(now.getTime() + 86400000).toISOString());
+    if(action.sourceImageId)db.prepare('UPDATE dialogue_pending SET source_image_id=? WHERE id=last_insert_rowid()').run(action.sourceImageId);
     return action.question + '\n回复“可以，就这样”确认，或回复“取消这个方案”。';
   }
   if (action.type === 'confirm_pending' || action.type === 'dismiss_pending') {
@@ -50,9 +63,11 @@ function applyAction(db: DB, action: Action, message: { id: string; user_id: str
       db.prepare('UPDATE dialogue_pending SET resolved_at=? WHERE id=?').run(new Date().toISOString(), pending.id);
       return '方案提出后账本已有变化，请重新说明或核对操作，避免覆盖新记录。';
     }
+    if(pending.source_image_id&&db.prepare('SELECT 1 FROM image_imports WHERE message_id=?').get(pending.source_image_id))return '这张图片已有确认入账记录，请核对原记录，不再次入账。';
     const operations = parseActions({ actions: JSON.parse(pending.actions_json) });
     const result = operations.map(a => applyAction(db, a, message)).join('\n\n');
     db.prepare('UPDATE dialogue_pending SET resolved_at=? WHERE id=?').run(new Date().toISOString(), pending.id);
+    if(pending.source_image_id)db.prepare('INSERT INTO image_imports(message_id,imported_at) VALUES(?,?)').run(pending.source_image_id,new Date().toISOString());
     return result;
   }
   if (action.type === 'clarify') return action.question || '请补充金额和用途。';
@@ -143,6 +158,17 @@ export function processMessage(db: DB, id: string): Promise<string> {
 async function processNextMessage(db: DB, id: string) {
   const message = db.prepare('SELECT * FROM messages WHERE id=?').get(id) as { user_id: string; text: string; received_at: string; status: string; result: string };
   if (message.status === 'done') return message.result;
+  const image = db.prepare('SELECT path,extracted_text FROM message_images WHERE message_id=?').get(id) as { path: string | null; extracted_text: string | null } | undefined;
+  if(image) {
+    if(!image.path)throw new Error('图片尚未下载，请核对飞书图片资源权限');
+    let text=image.extracted_text;
+    if(text===null) {
+      const extracted=await extractImageText(db,image.path);text=extracted.text+(extracted.uncertain?'\n[存在不清楚的文字，请核对]':'');
+      db.prepare('UPDATE message_images SET extracted_text=? WHERE message_id=?').run(text,id);
+    }
+    const result=text ? '图片识别文字（待核对）：\n'+text+'\n\n尚未修改账本。核对后可回复“把这张图片记到账本”，我会列出待确认的操作。' : '图片中没有识别到可读文字，尚未修改账本。';
+    return applyActions(db,id,[{type:'reply',text:result}]);
+  }
   const normalized = message.text.trim().replace(/[，。！？!?,.\s]/g, '');
   if (['今天没有收支', '今天无收支', '今天不用提醒'].includes(normalized)) return applyActions(db, id, [{ type: 'no_activity' }]);
   if (pendingDialogue(db, message.user_id)) {
@@ -160,5 +186,20 @@ async function processNextMessage(db: DB, id: string) {
     return result;
   })();
   const actions = await parseText(db, message.text, today(new Date(message.received_at)), { user: message.user_id, messageId: id });
-  return applyActions(db, id, actions);
+  return applyActions(db, id, protectImageActions(db,id,message.user_id,message.text,actions));
+}
+export function protectImageActions(db:DB,id:string,user:string,text:string,actions:Action[]):Action[] {
+  if(!/图片|截图|这张|上图|图里|图中|^(?:帮我|请)?(?:记一下|记进去|记下来|入账|保存到账本)/.test(text))return actions;
+  const source=db.prepare(`SELECT i.message_id FROM message_images i JOIN messages m ON m.id=i.message_id
+    WHERE m.user_id=? AND m.rowid<(SELECT rowid FROM messages WHERE id=?) ORDER BY m.rowid DESC LIMIT 1`).get(user,id) as {message_id:string}|undefined;
+  if(!source)return actions;
+  const mutations=new Set(['add','refund','update','cancel','account_create','account_update','possession_create','possession_update','loan_create','loan_update','loan_draw','loan_repay','loan_installment']);
+  const writes=actions.some(a=>mutations.has(a.type)||(a.type==='propose'&&a.actions.some(p=>mutations.has(p.type))));
+  if(!writes)return actions;
+  if(db.prepare('SELECT 1 FROM image_imports WHERE message_id=?').get(source.message_id))return [{type:'reply',text:'这张图片已有确认入账记录，请核对原记录，不再次入账。'}];
+  const proposals=actions.filter(a=>a.type==='propose');
+  if(proposals.length===1&&actions.length===1)return [{...proposals[0],sourceImageId:source.message_id}];
+  const operations:Extract<Action,{type:'propose'}>['actions']=[];
+  for(const action of actions){if(action.type==='propose')operations.push(...action.actions);else if(mutations.has(action.type))operations.push(action as typeof operations[number]);}
+  return [{type:'propose',sourceImageId:source.message_id,question:'请核对图片拟执行的操作（金额单位为元）：\n'+JSON.stringify(operations),actions:operations}];
 }

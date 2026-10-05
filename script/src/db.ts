@@ -40,11 +40,29 @@ export function openDb(path = join(dataDir, 'ledger.sqlite')) {
       status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, next_attempt INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS reports (id INTEGER PRIMARY KEY, period TEXT NOT NULL, start TEXT NOT NULL, end TEXT NOT NULL, cutoff TEXT NOT NULL,
       text TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(period,start,end));
+    CREATE TABLE IF NOT EXISTS possessions (id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, category TEXT NOT NULL DEFAULT '其他',
+      price INTEGER, purchased_on TEXT, retired_on TEXT, note TEXT NOT NULL DEFAULT '', archived_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS loans (account_id INTEGER PRIMARY KEY REFERENCES accounts(id), category TEXT NOT NULL DEFAULT 'other',
+      creditor TEXT NOT NULL DEFAULT '', repayment_start TEXT, monthly_payment INTEGER, due_day INTEGER, maturity_date TEXT,
+      annual_rate TEXT, subsidy_until TEXT, note TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS loan_installments (id INTEGER PRIMARY KEY, account_id INTEGER NOT NULL REFERENCES accounts(id),
+      due_date TEXT NOT NULL, principal INTEGER NOT NULL, interest INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT '', UNIQUE(account_id,due_date));
+    CREATE TABLE IF NOT EXISTS loan_events (id INTEGER PRIMARY KEY, account_id INTEGER NOT NULL REFERENCES accounts(id),
+      kind TEXT NOT NULL, amount INTEGER NOT NULL, interest INTEGER NOT NULL DEFAULT 0, date TEXT NOT NULL, note TEXT NOT NULL DEFAULT '',
+      installment_id INTEGER REFERENCES loan_installments(id), entry_id INTEGER REFERENCES entries(id), interest_entry_id INTEGER REFERENCES entries(id), created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS inventory_audit (id INTEGER PRIMARY KEY, entity TEXT NOT NULL, entity_id INTEGER NOT NULL,
+      before_json TEXT, after_json TEXT NOT NULL, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS message_images (message_id TEXT PRIMARY KEY REFERENCES messages(id), image_key TEXT, path TEXT, extracted_text TEXT);
+    CREATE TABLE IF NOT EXISTS image_imports (message_id TEXT PRIMARY KEY REFERENCES message_images(message_id), imported_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS chart_files (id TEXT PRIMARY KEY, message_id TEXT, kind TEXT NOT NULL, path TEXT NOT NULL, snapshot_json TEXT NOT NULL, created_at TEXT NOT NULL);
   `);
   const entryColumns = new Set((db.pragma('table_info(entries)') as { name: string }[]).map(c => c.name));
   for (const column of ['account_id', 'to_account_id']) {
     if (!entryColumns.has(column)) db.exec(`ALTER TABLE entries ADD COLUMN ${column} INTEGER REFERENCES accounts(id)`);
   }
+  const outboxColumns = new Set((db.pragma('table_info(outbox)') as { name: string }[]).map(c => c.name));
+  for (const column of ['image_path', 'image_key']) if (!outboxColumns.has(column)) db.exec(`ALTER TABLE outbox ADD COLUMN ${column} TEXT`);
+  if(!(db.pragma('table_info(dialogue_pending)') as {name:string}[]).some(c=>c.name==='source_image_id'))db.exec('ALTER TABLE dialogue_pending ADD COLUMN source_image_id TEXT');
   const confirmationSchema = db.prepare("SELECT sql FROM sqlite_master WHERE name='confirmations'").get() as { sql: string };
   if (confirmationSchema.sql.includes('message_id TEXT UNIQUE')) {
     db.transaction(() => db.exec(`

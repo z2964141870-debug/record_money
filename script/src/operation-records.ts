@@ -9,6 +9,8 @@ export function exportOperationRecord(db: DB, date: string, directory = join(dat
   const entries = db.prepare('SELECT * FROM audit WHERE created_at>=? AND created_at<? ORDER BY id').all(start, end) as { entry_id: number; action: string; after_json: string | null; before_json: string | null; created_at: string }[];
   const accounts = db.prepare('SELECT * FROM account_audit WHERE created_at>=? AND created_at<? ORDER BY id').all(start, end) as { after_json: string; created_at: string }[];
   const messages = db.prepare("SELECT id,status,result FROM messages WHERE received_at>=? AND received_at<? ORDER BY rowid").all(start, end) as { id: string; status: string; result: string | null }[];
+  const inventory=db.prepare('SELECT entity,after_json FROM inventory_audit WHERE created_at>=? AND created_at<? ORDER BY id').all(start,end) as {entity:string;after_json:string}[];
+  const loanEvents=db.prepare('SELECT account_id,kind,amount,interest,date,note FROM loan_events WHERE created_at>=? AND created_at<? ORDER BY id').all(start,end) as {account_id:number;kind:string;amount:number;interest:number;date:string;note:string}[];
   const encode = (s: string) => s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('\n', '<br>');
   const content = `# ${date} 操作记录\n\n北京时间。本文件从本地数据库自动生成；数据库及审计历史为原始记录。\n\n## 账目操作（${entries.length}）\n\n` + entries.map(a => {
     const e = JSON.parse(a.after_json || a.before_json || '{}') as { amount: number; category: string; note: string };
@@ -17,10 +19,11 @@ export function exportOperationRecord(db: DB, date: string, directory = join(dat
     const account = JSON.parse(a.after_json) as { name: string; balance: number | null; platform: string };
     return `- ${encode(account.name)} · ${encode(account.platform)} · ${account.balance === null ? '金额待填写' : money(account.balance) + ' 元'}\n`;
   }).join('') + `\n## 对话处理（${messages.length}）\n\n` + messages.map(m => `- ${m.status === 'done' ? '已处理' : m.status === 'pending' ? '排队中' : '需要处理'}：${encode(m.result || '尚无完成回执')}\n`).join('');
+  const complete=content+`\n## 物品与贷款计划（${inventory.length}）\n\n`+inventory.map(a=>`- ${encode(a.entity)}：${encode(a.after_json)}\n`).join('')+`\n## 借款与还款操作（${loanEvents.length}）\n\n`+loanEvents.map(e=>`- 账户 #${e.account_id} ${e.kind==='draw'?'新增本金':'还款'} ${money(e.amount)} 元 · 利息 ${money(e.interest)} 元 · ${e.date} ${encode(e.note)}\n`).join('');
   const folder = join(directory, date), path = join(folder, 'README.md');
   mkdirSync(folder, { recursive: true, mode: 0o700 });
-  if (existsSync(path) && readFileSync(path, 'utf8') === content) return path;
-  const temporary = path + '.tmp'; writeFileSync(temporary, content, { mode: 0o600 }); renameSync(temporary, path); chmodSync(path, 0o600);
+  if (existsSync(path) && readFileSync(path, 'utf8') === complete) return path;
+  const temporary = path + '.tmp'; writeFileSync(temporary, complete, { mode: 0o600 }); renameSync(temporary, path); chmodSync(path, 0o600);
   return path;
 }
 export function runOperationRecords(db: DB, now = new Date()) {

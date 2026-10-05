@@ -1,0 +1,20 @@
+:root { --line:#e5ebe7;--muted:#718078;--green:#167c69; }
+.inventory-view,.loans-view { min-width:0; }
+.item-note { display:block;max-width:480px;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted);font-size:12px;line-height:1.7;margin-top:5px; }
+.loan-layout { display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:32px; }
+.loan-row { border-bottom:1px solid var(--line);padding:18px 0; }
+.loan-row.selected { border-left:3px solid var(--green);padding-left:14px; }
+.loan-select { width:100%;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;text-align:left;background:none;border:0;padding:0;color:inherit;cursor:pointer; }
+.loan-select span { min-width:0; }.loan-select strong {font-size:15px;overflow-wrap:anywhere;}.loan-select>strong {white-space:nowrap;}
+.loan-select small {display:block;color:var(--muted);font-size:12px;margin-top:8px;}
+.loan-meta {display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--muted);margin:14px 0;}
+.loan-actions {display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
+.loan-history {margin-top:30px;border-top:1px solid var(--line);padding-top:24px;}.loan-history h2 {margin-bottom:16px;}
+.loan-detail {padding:18px 0;min-width:0;}.loan-detail h3 {font-size:14px;margin:28px 0 12px;}.loan-detail .muted {font-size:12px;line-height:1.7;}
+.loan-detail dl {display:grid;grid-template-columns:88px minmax(0,1fr);gap:12px;font-size:13px;}.loan-detail dt {color:var(--muted);}.loan-detail dd {margin:0;overflow-wrap:anywhere;}
+.installment-list>div {display:flex;gap:12px;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid var(--line);}
+.installment-list small {display:block;color:var(--muted);margin-top:6px;font-size:12px;}
+.generated-image {display:block;width:100%;max-width:900px;height:auto;margin-top:16px;border:1px solid var(--line);}
+.chart-output {margin-top:20px;}.chart-output .button {margin-top:12px;}
+.image-upload-label {display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;width:36px;height:36px;color:var(--muted);}.image-upload-label input {display:none;}
+@media(max-width:900px){.loan-layout{grid-template-columns:minmax(0,1fr);}.loan-detail{border-top:1px solid var(--line);}.inventory-view .account-toolbar{flex-wrap:wrap;}.inventory-view .search-input{width:100%;}}

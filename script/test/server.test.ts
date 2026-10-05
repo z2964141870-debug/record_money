@@ -20,5 +20,18 @@ test('local web access guards, input validation and shared ledger API', async ()
   assert.equal((await app.inject({ method: 'PUT', url: '/api/reminders', headers: auth, payload: { enabled: true, time: '25:00' } })).statusCode, 400);
   assert.equal((await app.inject({ method: 'PUT', url: '/api/reminders', headers: auth, payload: { enabled: false, time: '21:00' } })).statusCode, 200);
   assert.deepEqual((await app.inject({ url: '/api/status', headers })).json().reminder, { enabled: false, time: '21:00' });
+  const item=await app.inject({method:'POST',url:'/api/possessions',headers:auth,payload:{name:'验收手机',price:300000,purchased_on:'2021-09-30'}});assert.equal(item.statusCode,200);
+  assert.equal((await app.inject({url:'/api/possessions',headers})).json()[0].price,300000);
+  assert.equal((await app.inject({method:'POST',url:'/api/possessions/'+item.json().id+'/archive',headers:auth,payload:{archived:true}})).statusCode,200);
+  assert.equal((await app.inject({url:'/api/possessions',headers})).json().length,0);
+  assert.equal((await app.inject({url:'/api/possessions?archived=true',headers})).json().length,1);
+  const loan=await app.inject({method:'POST',url:'/api/loans',headers:auth,payload:{name:'助学贷款',balance:2400000,category:'student'}});assert.equal(loan.statusCode,200);
+  const loanId=loan.json().account_id;
+  assert.equal((await app.inject({method:'POST',url:'/api/loans/'+loanId+'/draw',headers:auth,payload:{amount:1200000,date:'2026-10-05'}})).json().balance,3600000);
+  assert.equal((await app.inject({url:'/api/loans',headers})).json().total,3600000);
+  const chart=await app.inject({method:'POST',url:'/api/charts',headers:auth,payload:{kind:'bill',start:'2026-10-01',end:'2026-10-06'}});assert.equal(chart.statusCode,200);
+  const png=await app.inject({url:chart.json().url,headers});assert.equal(png.headers['content-type'],'image/png');assert.equal(png.rawPayload.subarray(1,4).toString(),'PNG');
+  assert.equal((await app.inject({method:'POST',url:'/api/charts',headers:auth,payload:{kind:'pie',start:'2026-10-06',end:'2026-10-01'}})).statusCode,400);
+  assert.equal((await app.inject({method:'POST',url:'/api/images',headers:auth,payload:{image:'https://example.com/image.png'}})).statusCode,400);
   await app.close();
 });

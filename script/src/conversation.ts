@@ -1,11 +1,13 @@
 import type { DB } from './db.js';
-export type PendingDialogue = { id: number; question: string; actions_json: string; revision: string; expires_at: string };
+export type PendingDialogue = { id: number; question: string; actions_json: string; revision: string; expires_at: string; source_image_id:string|null };
 export function pendingDialogue(db: DB, user: string, now = new Date()) {
   return db.prepare('SELECT * FROM dialogue_pending WHERE user_id=? AND resolved_at IS NULL AND expires_at>? ORDER BY id DESC LIMIT 1').get(user, now.toISOString()) as PendingDialogue | undefined;
 }
 export function ledgerRevision(db: DB) {
   return JSON.stringify(db.prepare(`SELECT (SELECT COALESCE(MAX(id),0) FROM audit) AS ledger,
-    (SELECT COALESCE(MAX(id),0) FROM account_audit) AS accounts`).get());
+    (SELECT COALESCE(MAX(id),0) FROM account_audit) AS accounts,
+    (SELECT COALESCE(MAX(id),0) FROM inventory_audit) AS inventory,
+    (SELECT COALESCE(MAX(id),0) FROM loan_events) AS loans`).get());
 }
 export function conversationInput(db: DB, text: string, context?: { user: string; messageId: string }) {
   const input: { role: 'user' | 'assistant'; content: string }[] = [];

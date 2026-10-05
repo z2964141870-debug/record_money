@@ -60,6 +60,10 @@ export function findAccount(db: DB, name: string) {
   return matches[0];
 }
 export function initializeAccounts(db: DB) {
+  if(!setting(db,'accounts_v02_initialized'))db.transaction(()=>{
+    if(!db.prepare('SELECT id FROM accounts WHERE name=?').get('花呗'))saveAccount(db,{name:'花呗',platform:'支付宝',kind:'liability',balance:null});
+    setSetting(db,'accounts_v02_initialized','true');
+  })();
   if (setting(db, 'accounts_initialized')) return;
   db.transaction(() => {
     for (const [name, platform, kind] of [

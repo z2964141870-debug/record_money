@@ -2,7 +2,7 @@ import Fastify, { LogController } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { randomUUID, randomBytes, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
 import { config, root, dataDir } from './config.js';
@@ -15,6 +15,10 @@ import { backup } from './backup.js';
 import { accountOverview, initializeAccounts, saveAccount } from './accounts.js';
 import { reminderSettings, runReminder, saveReminderSettings } from './reminders.js';
 import { runOperationRecords } from './operation-records.js';
+import { listPossessions, savePossession, archivePossession } from './possessions.js';
+import { loanOverview, saveLoan, repayLoan, drawLoan, saveInstallment } from './loans.js';
+import { createChart,renderChart } from './charts.js';
+import { saveImage, decodeImageDataUrl } from './images.js';
 export async function buildServer(db = openDb()) {
   initializeAccounts(db);
   const app = Fastify({ logger: { level: 'info', redact: ['req.headers.authorization', 'req.body', 'res.body'] }, logController: new LogController({ disableRequestLogging: true }), bodyLimit: 100_000 });
@@ -36,7 +40,33 @@ export async function buildServer(db = openDb()) {
     reply.code(400).send({ error: message.slice(0, 400) });
   });
   const filters = (query: unknown) => z.object({ start: dateSchema.optional(), end: dateSchema.optional(), kind: z.string().optional(), category: z.string().optional(), q: z.string().max(200).optional(), includeCancelled: z.enum(['true', 'false']).optional() }).parse(query);
-  app.get('/api/bootstrap', async () => ({ csrf, version: '0.1.0', today: today() }));
+  app.get('/api/bootstrap', async () => ({ csrf, version: '0.2.0', today: today() }));
+  app.get('/api/possessions',async req=>listPossessions(db,today(),z.object({archived:z.enum(['true','false']).optional()}).parse(req.query).archived==='true'));
+  app.post('/api/possessions',async req=>savePossession(db,req.body));
+  app.put<{Params:{id:string}}>('/api/possessions/:id',async req=>savePossession(db,req.body,z.coerce.number().int().positive().parse(req.params.id)));
+  app.post<{Params:{id:string}}>('/api/possessions/:id/archive',async req=>{archivePossession(db,z.coerce.number().int().positive().parse(req.params.id),z.object({archived:z.boolean()}).parse(req.body).archived);return {ok:true};});
+  app.get('/api/loans',async()=>loanOverview(db));
+  app.post('/api/loans',async req=>saveLoan(db,req.body));
+  app.put<{Params:{id:string}}>('/api/loans/:id',async req=>saveLoan(db,req.body,z.coerce.number().int().positive().parse(req.params.id)));
+  app.post<{Params:{id:string}}>('/api/loans/:id/repay',async req=>repayLoan(db,z.coerce.number().int().positive().parse(req.params.id),req.body));
+  app.post<{Params:{id:string}}>('/api/loans/:id/draw',async req=>drawLoan(db,z.coerce.number().int().positive().parse(req.params.id),req.body));
+  app.post<{Params:{id:string}}>('/api/loans/:id/installments',async req=>saveInstallment(db,z.coerce.number().int().positive().parse(req.params.id),req.body));
+  app.put<{Params:{id:string;installment:string}}>('/api/loans/:id/installments/:installment',async req=>saveInstallment(db,z.coerce.number().int().positive().parse(req.params.id),req.body,z.coerce.number().int().positive().parse(req.params.installment)));
+  app.post('/api/charts',async req=>{const chart=createChart(db,req.body);return {url:chart.url,id:chart.id};});
+  app.post<{Params:{id:string}}>('/api/charts/:id/send',async req=>{
+    const id=z.uuid().parse(req.params.id),owner=setting(db,'owner');if(!owner)throw new Error('请先绑定飞书用户');
+    const chart=db.prepare('SELECT path FROM chart_files WHERE id=?').get(id) as {path:string}|undefined;if(!chart)throw new Error('图表不存在');
+    db.prepare('INSERT OR IGNORE INTO outbox(user_id,text,dedup,image_path,created_at) VALUES(?,?,?,?,?)').run(owner,'','chart-web:'+id,chart.path,new Date().toISOString());return {ok:true};
+  });
+  app.get<{Params:{id:string}}>('/api/charts/file/:id',async(req,reply)=>{
+    const id=z.uuid().parse(req.params.id),chart=db.prepare('SELECT path,snapshot_json FROM chart_files WHERE id=?').get(id) as {path:string;snapshot_json:string}|undefined;
+    if(!chart)throw new Error('图表不存在');return reply.header('Cache-Control','no-store').type('image/png').send(existsSync(chart.path)?readFileSync(chart.path):renderChart(JSON.parse(chart.snapshot_json)));
+  });
+  app.post('/api/images',{bodyLimit:12*1024*1024},async req=>{
+    const {image}=z.object({image:z.string().max(12*1024*1024)}).parse(req.body),path=await saveImage(decodeImageDataUrl(image)),id='web:'+randomUUID();
+    receiveMessage(db,id,'local','[用户上传图片，请提取文字]');db.prepare('INSERT INTO message_images(message_id,path) VALUES(?,?)').run(id,path);
+    try{return {result:await processMessage(db,id)};}catch{db.prepare("UPDATE messages SET status='needs_attention',error='图片识别失败，尚未入账' WHERE id=?").run(id);throw new Error('图片已保存，识别失败，尚未入账；可在运行状态重试');}
+  });
   app.get('/api/accounts', async () => accountOverview(db));
   app.post('/api/accounts', async req => saveAccount(db, req.body));
   app.put<{ Params: { id: string } }>('/api/accounts/:id', async req => saveAccount(db, req.body, z.coerce.number().int().positive().parse(req.params.id)));
@@ -69,7 +99,7 @@ export async function buildServer(db = openDb()) {
   app.post('/api/chat', async req => {
     const { text } = z.object({ text: z.string().trim().min(1).max(4000) }).parse(req.body); const id = 'web:' + randomUUID();
     receiveMessage(db, id, 'local', text);
-    try { return { result: await processMessage(db, id) }; }
+    try { const result=await processMessage(db,id);return {result,images:(db.prepare('SELECT id FROM chart_files WHERE message_id=?').all(id) as {id:string}[]).map(c=>'/api/charts/file/'+c.id)}; }
     catch { db.prepare("UPDATE messages SET status='needs_attention',error='模型或输入处理失败，尚未入账' WHERE id=?").run(id); throw new Error('模型或输入处理失败，消息已保存，尚未入账；可在运行状态中重试'); }
   });
   app.post('/api/confirm', async req => {

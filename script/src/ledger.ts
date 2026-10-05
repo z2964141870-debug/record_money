@@ -70,6 +70,7 @@ export function createEntry(db: DB, raw: unknown, source = 'web', messageId: str
   })();
 }
 export function updateEntry(db: DB, id: number, raw: unknown) {
+  if(db.prepare('SELECT 1 FROM loan_events WHERE entry_id=? OR interest_entry_id=? LIMIT 1').get(id,id))throw new Error('关联借款或还款记录请先撤销，再重新记录，避免分期数据不同步');
   return db.transaction(() => {
     const before = getEntry(db, id), value = inputSchema.parse(raw); validate(db, value, id);
     db.prepare('UPDATE entries SET kind=@kind,amount=@amount,date=@date,category=@category,subcategory=@subcategory,merchant=@merchant,note=@note,parent_id=@parent_id,account_id=@account_id,to_account_id=@to_account_id,updated_at=@updated_at WHERE id=@id').run({ ...value, id, updated_at: new Date().toISOString() });
