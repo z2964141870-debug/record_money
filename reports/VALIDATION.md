@@ -19,7 +19,7 @@
 
 已在 `codex/feishu-ledger-v0.1` 创建实现提交 `99d74c9`，源代码、依赖锁文件和文档共35个文件。凭证、实际账本、截图、运行日志和隔离验收数据均不提交。工作区按用户要求使用SSH远端。
 
-实际推送未成功：SSH返回 `Permission denied (publickey)`，SSH agent没有身份；HTTPS备选也缺少已配置的GitHub登录凭证。代码已保存在本机提交中，GitHub端尚未收到。配置GitHub SSH身份后，在项目目录运行 `git push -u origin codex/feishu-ledger-v0.1`。
+2026-10-06 已根据用户提供的指纹匹配本机现有SSH密钥，成功认证GitHub账号，并推送 `codex/feishu-ledger-v0.1`。该仓库通过本地 `core.sshCommand` 指定密钥，后续可直接执行 `git push`；密钥文件未加入仓库。分支已跟踪 `origin/codex/feishu-ledger-v0.1`。
 
 ## 使用边界
 
