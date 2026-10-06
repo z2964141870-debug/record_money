@@ -4,15 +4,16 @@ import { z } from 'zod';
 import { setupSchema } from './config-files.js';
 
 export type CheckResult = { service: 'feishu' | 'text' | 'vision'; ok: boolean; detail: string };
-type Options = { fetch?: typeof fetch; vision?: boolean };
+type Options = { fetch?: typeof fetch; vision?: boolean; feishu?: boolean };
 const payment = z.object({ amount: z.literal('20.00'), kind: z.literal('expense') });
 export async function checkConnections(raw: unknown, options: Options = {}): Promise<CheckResult[]> {
-  const c = setupSchema.parse(raw), request = options.fetch || fetch;
+  const c = setupSchema.omit({ appId: true, appSecret: true }).parse(raw), request = options.fetch || fetch;
   const results: CheckResult[] = [];
-  try {
+  if (options.feishu !== false) try {
+    const credentials = setupSchema.parse(raw);
     const response = await request('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ app_id: c.appId, app_secret: c.appSecret }), signal: AbortSignal.timeout(15000),
+      body: JSON.stringify({ app_id: credentials.appId, app_secret: credentials.appSecret }), signal: AbortSignal.timeout(15000),
     });
     const value = await response.json() as { code?: number; tenant_access_token?: string };
     const ok = response.ok && value.code === 0 && !!value.tenant_access_token;

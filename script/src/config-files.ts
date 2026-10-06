@@ -27,6 +27,16 @@ export function readSetupConfig(data: string) {
   const path = join(data, 'config.env');
   return existsSync(path) ? dotenv.parse(readFileSync(path)) : {};
 }
+export function saveConfigFields(data: string, updates: Record<string, string>) {
+  const body = Object.entries({ ...readSetupConfig(data), ...updates }).map(([k, v]) => {
+    if (!/^[A-Z_][A-Z0-9_]*$/.test(k) || /['\r\n\0]/.test(v)) throw new Error('配置包含不支持的字段或字符');
+    return `${k}='${v}'`;
+  }).join('\n') + '\n';
+  mkdirSync(data, { recursive: true, mode: 0o700 });
+  const path = join(data, 'config.env'), temp = path + '.tmp';
+  writeFileSync(temp, body, { mode: 0o600 }); chmodSync(temp, 0o600); renameSync(temp, path);
+  return path;
+}
 export function saveSetupConfig(root: string, storage: string, raw: unknown, options: { writePointer?: boolean } = {}) {
   const c = setupSchema.parse(raw), base = storageRoot(storage), data = join(base, 'data');
   for (const dir of [data, join(base, 'logs'), ...(options.writePointer === false ? [] : [join(root, 'data')])]) mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -34,13 +44,7 @@ export function saveSetupConfig(root: string, storage: string, raw: unknown, opt
     AI_BASE_URL: c.aiBaseUrl.replace(/\/$/, ''), AI_API_KEY: c.aiKey, AI_MODEL: c.model, AI_REASONING: c.reasoning };
   // Single quotes preserve #, $, double quotes and backticks in dotenv values.
   if (Object.values(values).some(v => v.includes("'"))) throw new Error('配置暂不支持单引号');
-  const old = readSetupConfig(data);
-  const body = Object.entries({ ...old, ...values }).map(([k, v]) => {
-    if (!/^[A-Z_][A-Z0-9_]*$/.test(k) || /['\r\n\0]/.test(v)) throw new Error('已有配置包含不支持的字段');
-    return `${k}='${v}'`;
-  }).join('\n') + '\n';
-  const path = join(data, 'config.env'), temp = path + '.tmp';
-  writeFileSync(temp, body, { mode: 0o600 }); chmodSync(temp, 0o600); renameSync(temp, path);
+  const path = saveConfigFields(data, values);
   if (options.writePointer !== false) writeFileSync(join(root, 'data', 'runtime-location.txt'), base + '\n', { mode: 0o600 });
   return path;
 }

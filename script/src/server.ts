@@ -19,7 +19,10 @@ import { listPossessions, savePossession, archivePossession } from './possession
 import { loanOverview, saveLoan, repayLoan, drawLoan, saveInstallment } from './loans.js';
 import { createChart,renderChart } from './charts.js';
 import { saveImage, decodeImageDataUrl } from './images.js';
-export async function buildServer(db = openDb()) {
+import { currentModelService, resolveModelService, saveModelService } from './model-service.js';
+import { checkConnections } from './connection-check.js';
+export async function buildServer(db = openDb(), options: { configDir?: string; runtimeConfig?: typeof config; modelCheck?: typeof checkConnections } = {}) {
+  const modelConfig = options.runtimeConfig || config;
   initializeAccounts(db);
   const app = Fastify({ logger: { level: 'info', redact: ['req.headers.authorization', 'req.body', 'res.body'] }, logController: new LogController({ disableRequestLogging: true }), bodyLimit: 100_000 });
   const csrf = randomBytes(32).toString('hex');
@@ -41,7 +44,7 @@ export async function buildServer(db = openDb()) {
     reply.code(400).send({ error: message.slice(0, 400) });
   });
   const filters = (query: unknown) => z.object({ start: dateSchema.optional(), end: dateSchema.optional(), kind: z.string().optional(), category: z.string().optional(), q: z.string().max(200).optional(), includeCancelled: z.enum(['true', 'false']).optional() }).parse(query);
-  app.get('/api/bootstrap', async () => ({ csrf, version: '0.3.0', today: today() }));
+  app.get('/api/bootstrap', async () => ({ csrf, version: '0.3.1', today: today() }));
   app.get('/api/possessions',async req=>listPossessions(db,today(),z.object({archived:z.enum(['true','false']).optional()}).parse(req.query).archived==='true'));
   app.post('/api/possessions',async req=>savePossession(db,req.body));
   app.put<{Params:{id:string}}>('/api/possessions/:id',async req=>savePossession(db,req.body,z.coerce.number().int().positive().parse(req.params.id)));
@@ -83,8 +86,8 @@ export async function buildServer(db = openDb()) {
     pendingMessages: db.prepare("SELECT id,user_id,text,received_at,attempts,status,error FROM messages WHERE status!='done' ORDER BY received_at DESC LIMIT 100").all(),
     confirmations: db.prepare('SELECT * FROM confirmations WHERE resolved_at IS NULL ORDER BY id DESC').all().map(raw => { const c = raw as { action_json: string }; const saved = JSON.parse(c.action_json); return { ...c, action: saved.action, candidates: saved.candidates.map((id: number) => { try { return getEntry(db, id); } catch { return null; } }).filter(Boolean) }; }),
     outbox: (db.prepare("SELECT COUNT(*) AS n FROM outbox WHERE status='pending'").get() as { n: number }).n,
-    lastBackup: setting(db, 'backup_date'), dataDir, reminder: reminderSettings(db), model: setting(db, 'model', config.model), reasoning: setting(db, 'reasoning', config.reasoning),
-    baseUrl: config.aiBaseUrl, aiConfigured: !!config.aiKey, feishuConfigured: !!config.appId && !!config.appSecret, appId: config.appId }));
+    lastBackup: setting(db, 'backup_date'), dataDir, reminder: reminderSettings(db), model: setting(db, 'model', modelConfig.model), reasoning: setting(db, 'reasoning', modelConfig.reasoning),
+    baseUrl: modelConfig.aiBaseUrl, aiConfigured: !!modelConfig.aiKey, feishuConfigured: !!config.appId && !!config.appSecret, appId: config.appId }));
   app.post('/api/bind', async req => {
     const { user } = z.object({ user: z.string().min(1).max(100) }).parse(req.body);
     if (setting(db, 'owner') && user !== setting(db, 'owner')) throw new Error('v0.1不支持切换账本所有者');
@@ -92,9 +95,14 @@ export async function buildServer(db = openDb()) {
     setSetting(db, 'owner', user); setSetting(db, 'schedule_start', today());
     queueReply(db, user, '个人账本已绑定，可以开始记账。', 'bound:' + user); return { ok: true };
   });
-  app.put('/api/settings', async req => {
-    const input = z.object({ model: z.string().trim().min(1).max(100), reasoning: z.enum(['none', 'low', 'medium', 'high']) }).parse(req.body);
-    setSetting(db, 'model', input.model); setSetting(db, 'reasoning', input.reasoning); return { ok: true };
+  app.put('/api/settings', async req => saveModelService(db, modelConfig, options.configDir || dataDir, req.body));
+  let checkingModel = false;
+  app.post('/api/settings/check', async (req, reply) => {
+    if (checkingModel) return reply.code(409).send({ error: '已有连接测试正在进行，请稍后重试' });
+    const next = resolveModelService(currentModelService(db, modelConfig), req.body);
+    checkingModel = true;
+    try { return { results: await (options.modelCheck || checkConnections)(next, { feishu: false }) }; }
+    finally { checkingModel = false; }
   });
   app.put('/api/reminders', async req => saveReminderSettings(db, req.body));
   app.post('/api/chat', async req => {

@@ -3,7 +3,7 @@ services:
     build:
       context: ..
       dockerfile: script/Dockerfile
-    image: record-money:0.3.0
+    image: record-money:0.3.1
     restart: unless-stopped
     init: true
     environment:
