@@ -10,7 +10,7 @@ Apple Silicon（M系列）下载macos-arm64.zip，Intel Mac下载macos-x64.zip�
 
 ## Linux / NAS
 
-安装Docker后下载compose.yaml，在所在目录执行docker compose up -d。镜像自动下载，首次启动自动准备存储目录，无需自行构建。打开http://127.0.0.1:4317完成配置。默认数据保存在compose文件旁的data/docker-storage。
+安装Docker后下载compose.yaml，在所在目录执行docker compose up -d。镜像自动下载，首次启动自动准备存储目录，无需自行构建。打开 <http://127.0.0.1:4317> 完成配置。默认数据保存在compose文件旁的data/docker-storage。
 
 预构建镜像：ghcr.io/z2964141870-debug/record_money:0.4.0，支持linux/amd64与linux/arm64。远程主机通过SSH转发访问，仅向本机暴露管理网页。
 

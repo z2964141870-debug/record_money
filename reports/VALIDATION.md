@@ -7,6 +7,9 @@
 - Mac应用内置Node和依赖，独立安装及精简PATH运行通过，SQLite与绘图模块可用，签名完整性检查通过。当前仅本地签名，尚未Developer ID签名或Apple公证。GitHub已成功构建Apple Silicon和Intel安装包。
 - 新版Mac启动器已实际升级原launchd服务，自动备份与登录启动配置有效，正式服务版本0.4.0、飞书connected、无连接错误、发送队列0。与升级前独立备份逐表比较，entries、accounts、possessions、loans、loan_installments、loan_events、messages及settings完全一致，模型配置、本人绑定和20:00提醒保留。
 - Docker空挂载目录启动成功，服务Node进程以UID1000运行。GHCR的0.4.0镜像已公开，匿名令牌及manifest请求均200，包含linux/amd64与linux/arm64。
+- 独立空Docker认证配置实际拉取公开镜像成功，摘要6b90bef1c9014343c6b5528c2eb51025a3d51f3dac6cf4869a72e483becfa9da。公开镜像启动后返回0.4.0首次配置状态，Node以UID1000运行；所有验收容器和独立网页服务已停止，正式launchd保留。
+- GitHub首次发布下载阶段误取Docker构建记录导致失败，已限制产物为source/mac-*，增加复用已有构建的补发入口。补发运行37466788573成功，v0.4.0公开Release已附两种Mac包、源码包、compose和三个摘要文件。修复提交保存在后续分支，原v0.4.0标签与产物保持对应。
+- 公开源码ZIP下载及SHA256通过，解压后全部90个文件摘要通过；清单不包含配置、账本、历史、日志或个人验收报告。Mac arm64校验文件与GitHub上传摘要一致，首个1MB范围下载206成功；本机完整100MB下载受网络速度影响中止，未完成公开Mac包完整下载后的复验。实际Mac打包、独立安装和升级验证见前述记录。
 - 钉钉尚无实际应用凭证，未实测Stream连接、平台图片和主动消息；当前只完成接口模拟测试，发布说明已注明。
 
 ## v0.3.1：网页模型服务设置验收
