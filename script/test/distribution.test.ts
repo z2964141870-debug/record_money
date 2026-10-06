@@ -35,20 +35,20 @@ test('container setup can save in mounted storage without writing code directory
     assert.ok(existsSync(join(dir, 'storage', 'data', 'config.env'))); assert.ok(!existsSync(join(dir, 'absent-code')));
     assert.throws(() => setupSchema.parse({ ...fixture, aiBaseUrl: 'https://example.com/v1?key=secret' }));
     assert.throws(() => setupSchema.parse({ ...fixture, port: 80 }));
-    assert.throws(() => setupSchema.parse({ ...fixture, model: '' }));
+    assert.throws(() => saveSetupConfig(dir,join(dir,'storage'),{...fixture,model:''}));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 function modelResponse(text: string) {
   return new Response(JSON.stringify({ id: 'test', object: 'response', status: 'completed', output: [{ type: 'message', id: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text, annotations: [] }] }] }), { headers: { 'Content-Type': 'application/json' } });
 }
-test('connection checks validate text and image JSON, omit reasoning for cheap models and never expose tokens', async () => {
+test('connection checks validate text and image JSON, disable reasoning and never expose tokens', async () => {
   const requests: { url: string; body: Record<string, unknown> }[] = [];
   const fake: typeof fetch = async (input, init) => {
     const url = String(input); requests.push({ url, body: JSON.parse(String(init?.body)) });
     return url.includes('feishu.cn') ? new Response(JSON.stringify({ code: 0, tenant_access_token: 'private-token' }), { headers: { 'Content-Type': 'application/json' } }) : modelResponse('{"amount":"20.00","kind":"expense"}');
   };
-  const results = await checkConnections(fixture, { fetch: fake }); assert.equal(results.length, 3); assert.ok(results.every(r => r.ok));
-  assert.ok(requests[1].url.endsWith('/v1/responses')); assert.equal(requests[1].body.reasoning, undefined);
+  const results = await checkConnections(fixture, { fetch: fake }); assert.equal(results.length, 4); assert.ok(results.every(r => r.ok));
+  assert.ok(requests[1].url.endsWith('/v1/responses')); assert.deepEqual(requests[1].body.reasoning, {effort:'none'});
   const input = requests[2].body.input as { content: { type: string; image_url?: string }[] }[];
   assert.ok(input[0].content.find(c => c.type === 'input_image')?.image_url?.startsWith('data:image/png;base64,'));
   assert.ok(!JSON.stringify(results).includes('private-token'));
@@ -58,7 +58,8 @@ test('connection checks validate text and image JSON, omit reasoning for cheap m
 test('connection failures and wrong image amounts are reported without leaking provider body or key', async () => {
   const fake: typeof fetch = async (input) => String(input).includes('feishu.cn')
     ? new Response(JSON.stringify({ code: 1, msg: fixture.appSecret }), { status: 400 }) : modelResponse('{"amount":"200.00","kind":"expense"}');
-  const results = await checkConnections(fixture, { fetch: fake }); assert.ok(results.every(r => !r.ok));
+  const results = await checkConnections(fixture, { fetch: fake }); assert.ok(results.filter(r=>r.service!=='structured').every(r => !r.ok));
+  assert.equal(results.find(r=>r.service==='structured')?.state,'verified');
   assert.ok(!JSON.stringify(results).includes(fixture.appSecret)); assert.ok(!JSON.stringify(results).includes('200.00'));
   const errors = await checkConnections(fixture, { fetch: async () => { throw new Error(fixture.aiKey); } });
   assert.ok(errors.every(r => !r.ok)); assert.ok(!JSON.stringify(errors).includes(fixture.aiKey));

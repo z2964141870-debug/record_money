@@ -53,6 +53,13 @@ jobs:
           cache-dependency-path: script/package-lock.json
       - run: npm ci && npm run build && npm run package:mac
         working-directory: script
+      - name: Verify bundled fixed-mode runtime
+        working-directory: script
+        run: |
+          ditto -x -k "../data/releases/record-money-v$(node -p 'require("./package.json").version')-macos-$(node -p 'process.arch').zip" "$RUNNER_TEMP/record-money-unpacked"
+          "$RUNNER_TEMP/record-money-unpacked/私人记账助手.app/Contents/MacOS/RecordMoney" --install-only --destination "$RUNNER_TEMP/record-money-installed"
+          VERSION=$(node -p 'require("./package.json").version')
+          npx tsx tools/runtime-smoke.ts --home "$RUNNER_TEMP/record-money-ledger" --node "$RUNNER_TEMP/record-money-installed/desktop/$VERSION/bin/node" --server "$RUNNER_TEMP/record-money-installed/desktop/$VERSION/script/build/start.js"
       - uses: actions/upload-artifact@v4
         with:
           name: mac-${{ matrix.runner }}

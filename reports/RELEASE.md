@@ -1,27 +1,19 @@
-# v0.5.0
+# v0.6.0
 
-飞书或钉钉聊天记账，支持读图、退款、资金账户、贷款、物品清单、三种账单图表和定时提醒。
+不配置AI也能记账：`支出 20 餐饮 奶茶`。自然语言可选Responses或Chat Completions，读图按模型能力启用。升级保留账本、配置和聊天。
 
-## 安装
+## 下载与配置
 
-- **Windows 10/11 x64**：下载 `record-money-v0.5.0-windows-x64.zip`，解压后双击 `RecordMoney.exe`。
-- **Mac M系列**：下载 `record-money-v0.5.0-macos-arm64.zip`。
-- **Intel Mac**：下载 `record-money-v0.5.0-macos-x64.zip`。
-- **Linux/NAS**：下载 `compose.yaml`，执行 `docker compose up -d`。
+- **Windows 10/11 x64**：解压`record-money-v0.6.0-windows-x64.zip`，打开`RecordMoney.exe`。
+- **Mac**：M系列选`macos-arm64.zip`，Intel选`macos-x64.zip`，解压后打开应用，要求macOS 14+。
+- **Linux/NAS**：下载`compose.yaml`，执行`docker compose up -d`，打开<http://127.0.0.1:4317>。
 
-Windows和Mac内置运行环境，无需Node、Docker或终端。Windows支持10 22H2/11的Intel/AMD电脑，首次打开自动创建桌面快捷方式；Mac支持macOS 14+。安装包尚未代码签名或Apple公证，首次打开可能有系统安全提示。[详细安装步骤](https://github.com/z2964141870-debug/record_money/blob/codex/feishu-ledger-v0.1/reports/DISTRIBUTION.md)。
+先按[飞书机器人教程与权限](https://github.com/z2964141870-debug/record_money/blob/v0.6.0/reports/FEISHU.md)或[钉钉机器人教程与权限](https://github.com/z2964141870-debug/record_money/blob/v0.6.0/reports/DINGTALK.md)创建并发布应用；这两份教程也附在Release里。
 
-## 创建机器人
+填写应用ID、Secret，选“固定格式”或“固定格式 + AI”。私聊机器人后在网页绑定自己。[命令表](https://github.com/z2964141870-debug/record_money/blob/v0.6.0/reports/README.md) · [模型配置](https://github.com/z2964141870-debug/record_money/blob/v0.6.0/reports/MODELS.md)
 
-选择一个平台，照着教程创建应用、开通权限、发布，再把凭证填进记账助手。
+源码ZIP供开发，`.sha256`供校验。安装包未公证/签名，首次打开可能有系统安全提示；电脑睡眠或关机会中断服务。
 
-- **[飞书机器人教程](https://github.com/z2964141870-debug/record_money/blob/codex/feishu-ledger-v0.1/reports/FEISHU.md)**：自建应用、机器人能力、消息与图片权限、长连接事件。
-- **[钉钉机器人教程](https://github.com/z2964141870-debug/record_money/blob/codex/feishu-ledger-v0.1/reports/DINGTALK.md)**：企业内部应用、Stream模式、发送与图片权限。
+## 验证范围
 
-下方附件 `FEISHU.md`、`DINGTALK.md` 也可单独下载。
-
-再填模型服务地址、API Key和模型名。模型需支持Responses和图片输入，不需要Agent或Codex账号。私聊机器人发送“绑定账本”，在网页确认绑定后开始记账。
-
-`record-money-v0.5.0.zip` 是开发用源码包；`.sha256` 是校验文件。账本和密钥保存在本机，电脑睡眠或关机会中断服务。
-
-本版新增Windows安装包、登录自启与托盘菜单，升级前自动备份。[版本记录](https://github.com/z2964141870-debug/record_money/blob/codex/feishu-ledger-v0.1/reports/CHANGELOG.md)。
+自动测试、Mac独立安装、Linux容器、Windows原生安装包验收及现有模型关闭思考后的标准样例通过。Qwen候选尚无凭证，未实测；新版无模型的真实飞书/钉钉入站仍待人工验收，接口模拟已覆盖。Windows首次安全提示、快捷方式、自启和文件夹对话框尚未人工验收。[完整记录](https://github.com/z2964141870-debug/record_money/blob/v0.6.0/reports/VALIDATION.md)

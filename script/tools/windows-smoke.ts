@@ -36,7 +36,7 @@ try {
   console.log('Started bundled service');
   run(['--stop', '--destination', home]);
 
-  saveSetupConfig(home, storage, { appId: 'cli_windowsqa', appSecret: 'fixture-secret', aiBaseUrl: 'https://fixture.invalid/v1', aiKey: 'fixture-key', model: 'fixture-vision', port: currentPort });
+  saveSetupConfig(home, storage, { appId: 'cli_windowsqa', appSecret: 'fixture-secret', aiMode:'fixed', port: currentPort });
   saveConfigFields(join(storage, 'data'), { FEISHU_ENABLED: 'false' });
   run(['--headless', '--destination', home]);
   bootstrap = await (await fetch(url + '/api/bootstrap')).json();
@@ -48,7 +48,9 @@ try {
     const response = await fetch(url + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Ledger-Token': bootstrap.csrf }, body: JSON.stringify(body) });
     const result = await response.json(); assert.equal(response.status, 200, JSON.stringify(result)); return result;
   };
-  await post('/api/entries', { kind: 'expense', amount: 1234, date: '2026-10-06', category: '餐饮', merchant: 'Windows验收' });
+  assert.equal(setup.aiMode,'fixed');
+  const receipt=await post('/api/chat',{text:'支出 12.34 餐饮 Windows验收 日期=2026-10-06'});assert.match(receipt.result,/12.34/);
+  const hint=await post('/api/chat',{text:'奶茶20'});assert.match(hint.result,/固定格式/);
   for (const kind of ['bill', 'pie', 'funds']) {
     const chart = await post('/api/charts', { kind, start: '2026-10-01', end: '2026-10-31' });
     const response = await fetch(url + chart.url); assert.equal(response.status, 200);

@@ -41,19 +41,20 @@ try {
     } finally { db.close(); }
   }
   const channel = await ask('聊天渠道（feishu/dingtalk）', old.CHAT_CHANNEL || 'feishu');
+  const aiMode=await ask('记账方式（fixed固定格式/ai固定格式+AI）',old.AI_MODE||(old.AI_API_KEY?'ai':'fixed'));
   const raw = {
-    channel,
+    channel,aiMode,apiType:aiMode==='ai'?await ask('接口类型（responses/chat_completions）',old.AI_API_TYPE||'responses'):old.AI_API_TYPE||'responses',
     appId: await ask(channel === 'dingtalk' ? '钉钉Client ID' : '飞书App ID', channel === 'dingtalk' ? old.DINGTALK_CLIENT_ID : old.FEISHU_APP_ID),
     appSecret: await ask(channel === 'dingtalk' ? '钉钉Client Secret' : '飞书App Secret', channel === 'dingtalk' ? old.DINGTALK_CLIENT_SECRET : old.FEISHU_APP_SECRET, true),
-    aiBaseUrl: await ask('AI Base URL', old.AI_BASE_URL || 'https://api.openai.com/v1'), aiKey: await ask('AI API Key', old.AI_API_KEY, true),
-    model: await ask('多模态模型名称', old.AI_MODEL), reasoning: await ask('推理强度（none/low/medium/high）', old.AI_REASONING || 'none'),
+    aiBaseUrl:aiMode==='ai'?await ask('AI Base URL', old.AI_BASE_URL):old.AI_BASE_URL||'', aiKey:aiMode==='ai'?await ask('AI API Key', old.AI_API_KEY, true):old.AI_API_KEY||'',
+    model:aiMode==='ai'?await ask('模型名称', old.AI_MODEL):old.AI_MODEL||'', reasoning:aiMode==='ai'?await ask('推理强度（none/low/medium/high）', old.AI_REASONING || 'none'):old.AI_REASONING||'none',
     port: Number(await ask('本机网页端口', old.PORT || '4317')),
   };
   const value = setupSchema.parse(raw);
   console.log('配置格式有效。连接测试会向飞书验证凭证，并调用模型进行一次文字和一次示例图片测试，不读取你的账本。');
   if ((await ask('现在进行连接测试？（y/n）', 'y')).toLowerCase() === 'y') {
     const results = await checkConnections(value); for (const r of results) console.log(`${r.ok ? '通过' : '失败'} · ${r.service}：${r.detail}`);
-    if (results.some(r => !r.ok) && (await ask('存在测试失败，仍保存配置？（y/n）', 'n')).toLowerCase() !== 'y') throw new Error('配置未保存，请核对后重新运行');
+    if (results.some(r => !r.ok && r.service!=='vision') && (await ask('存在测试失败，仍保存配置？（y/n）', 'n')).toLowerCase() !== 'y') throw new Error('配置未保存，请核对后重新运行');
   }
   console.log('配置已保存：' + saveSetupConfig(root, storage, value, { writePointer: !fixedData }));
   if (existsSync(ledgerPath)) {

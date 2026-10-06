@@ -18,7 +18,7 @@ try {
   for (const name of ['package.json', 'package-lock.json']) cpSync(join(root, 'script', name), join(payload, 'script', name));
   if (!process.env.npm_execpath) throw new Error('请使用npm run package:windows打包');
   execFileSync(process.execPath, [process.env.npm_execpath, 'ci', '--omit=dev'], { cwd: join(payload, 'script'), stdio: 'inherit' });
-  const docs = ['README.md', 'FEISHU.md', 'DINGTALK.md', 'DISTRIBUTION.md', 'MODELS.md', 'CHANGELOG.md'];
+  const docs = ['README.md', 'FEISHU.md', 'DINGTALK.md', 'DISTRIBUTION.md', 'MODELS.md', 'MODEL_EVALUATION.md', 'CHANGELOG.md'];
   for (const destination of [payload, stage]) {
     mkdirSync(join(destination, 'reports'));
     for (const name of docs) cpSync(join(root, 'reports', name), join(destination, 'reports', name));

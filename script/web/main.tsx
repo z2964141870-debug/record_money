@@ -68,6 +68,7 @@ function SettingsView({ status, refresh, toast }: { status: Status; refresh: () 
 function stateName(state: string) { return ({ disabled: '未启用', connecting: '连接中', connected: '已连接', reconnecting: '重连中', error: '连接异常' } as Record<string, string>)[state] || state; }
 function App() {
   const [setupRequired, setSetupRequired] = useState(false);
+  const [version, setVersion] = useState('');
   const [view, setView] = useState('overview'), [date, setDate] = useState(''), [range, setRange] = useState({ start: '', end: '' });
   const [entries, setEntries] = useState<Entry[]>([]), [stats, setStats] = useState<Summary | null>(null), [status, setStatus] = useState<Status | null>(null), [reports, setReports] = useState<Report[]>([]);
   const [funds, setFunds] = useState<Funds | null>(null);
@@ -76,7 +77,7 @@ function App() {
   const [toast, setToast] = useState(''), [error, setError] = useState(''), [loading, setLoading] = useState(true), [form, setForm] = useState<{ entry?: Entry; refund?: Entry } | null>(null);
   const [text, setText] = useState(''), [reply, setReply] = useState(''), [sending, setSending] = useState(false), [reportText, setReportText] = useState(''), [deleting, setDeleting] = useState<Entry | null>(null), [history, setHistory] = useState<{ action: string; created_at: string; before_json: string | null; after_json: string | null }[] | null>(null);
   const notify = (s: string) => { setToast(s); window.setTimeout(() => setToast(''), 4500); };
-  useEffect(() => { api<{ csrf: string; today: string; setupRequired: boolean }>('/bootstrap').then(data => { token = data.csrf; setSetupRequired(data.setupRequired); setDate(data.today); setRange({ start: data.today.slice(0, 7) + '-01', end: data.today }); }).catch(e => { setError(e.message); setLoading(false); }); }, []);
+  useEffect(() => { api<{ csrf: string; today: string; setupRequired: boolean; version:string }>('/bootstrap').then(data => { token = data.csrf; setVersion(data.version); setSetupRequired(data.setupRequired); setDate(data.today); setRange({ start: data.today.slice(0, 7) + '-01', end: data.today }); }).catch(e => { setError(e.message); setLoading(false); }); }, []);
   async function refresh() {
     if (!range.start || !range.end) return;
     try {
@@ -105,7 +106,7 @@ function App() {
     </tr>;
   })}</tbody></table>{rows.length === 0 && <div className="empty"><ReceiptText size={32} strokeWidth={1.3}/><p>{compact ? '本期暂无账目' : '暂无符合条件的记录'}</p><button className="button" onClick={() => setForm({})}><Plus size={16}/>新增记录</button></div>}</div>;
   if (setupRequired) return <SetupView request={api}/>;
-  return <div className="app"><aside className="sidebar"><div className="brand"><span><Wallet size={24}/></span><div>私人账本<small>PERSONAL LEDGER</small></div></div><nav>{nav.map(n => <button key={n.id} aria-label={n.label} title={n.label} className={view === n.id ? 'active' : ''} onClick={() => setView(n.id)}><n.icon size={18}/><span>{n.label}</span>{n.id === 'activity' && issueCount > 0 && <b>{issueCount}</b>}</button>)}</nav><div className="sidebar-bottom"><span className="avatar">我</span><div>个人账户<small>本机 · v0.4.0</small></div><span className="local-dot"/></div></aside>
+  return <div className="app"><aside className="sidebar"><div className="brand"><span><Wallet size={24}/></span><div>私人账本<small>PERSONAL LEDGER</small></div></div><nav>{nav.map(n => <button key={n.id} aria-label={n.label} title={n.label} className={view === n.id ? 'active' : ''} onClick={() => setView(n.id)}><n.icon size={18}/><span>{n.label}</span>{n.id === 'activity' && issueCount > 0 && <b>{issueCount}</b>}</button>)}</nav><div className="sidebar-bottom"><span className="avatar">我</span><div>个人账户<small>本机{version && ' · v'+version}</small></div><span className="local-dot"/></div></aside>
     <main><header className="topbar"><span className="breadcrumb">个人账本 <ChevronRight size={14}/> {title}</span><button className="connection" onClick={() => setView('activity')}><span className={'dot ' + (status?.bot.state === 'connected' ? 'online' : '')}/><span>{status?.channel === 'dingtalk' ? '钉钉' : '飞书'}{status ? stateName(status.bot.state) : '连接中'}</span></button></header>
       <div className="content"><div className="page-heading"><div><p className="eyebrow">{date.replaceAll('-', '.')} · CNY</p><h1>{title}</h1></div><div className="heading-actions"><IconButton title="刷新数据" onClick={() => { void refresh(); }}><RefreshCw size={18}/></IconButton>{['overview','entries','reports'].includes(view) && <button className="button primary" onClick={() => setForm({})}><Plus size={17}/>记一笔</button>}</div></div>
       {error && <div className="alert error"><CircleAlert size={18}/>{error}</div>}

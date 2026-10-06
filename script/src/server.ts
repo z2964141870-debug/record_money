@@ -21,6 +21,7 @@ import { createChart,renderChart } from './charts.js';
 import { saveImage, decodeImageDataUrl } from './images.js';
 import { currentModelService, resolveModelService, saveModelService } from './model-service.js';
 import { checkConnections } from './connection-check.js';
+import { modelCapabilities, saveCapabilities, ModelFailure } from './model-api.js';
 import { needsSetup, persistInitialSetup, resolveSetup } from './onboarding.js';
 import { dirname } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -50,11 +51,11 @@ export async function buildServer(db = openDb(), options: { configDir?: string; 
   const filters = (query: unknown) => z.object({ start: dateSchema.optional(), end: dateSchema.optional(), kind: z.string().optional(), category: z.string().optional(), q: z.string().max(200).optional(), includeCancelled: z.enum(['true', 'false']).optional() }).parse(query);
   const setupData = options.configDir || dataDir, fixedStorage = options.fixedStorage ?? !!process.env.LEDGER_DATA_DIR;
   let settingUp = false;
-  app.get('/api/bootstrap', async () => ({ csrf, product: 'record-money', version: '0.5.0', pid: process.pid, today: today(), setupRequired: needsSetup(modelConfig) }));
+  app.get('/api/bootstrap', async () => ({ csrf, product: 'record-money', version: '0.6.0', pid: process.pid, today: today(), setupRequired: needsSetup(modelConfig) }));
   app.get('/api/setup', async () => ({ required: needsSetup(modelConfig), storage: dirname(setupData), fixedStorage,
-    channel: modelConfig.channel,
+    channel: modelConfig.channel, aiMode: modelConfig.aiMode==='fixed'?'fixed':modelConfig.aiKey?'ai':'fixed', apiType:modelConfig.apiType,
     canChooseFolder: !!process.env.LEDGER_DIRECTORY_PICKER, appId: modelConfig.appId, baseUrl: modelConfig.aiBaseUrl,
-    model: modelConfig.model, reasoning: modelConfig.reasoning, restarting: settingUp }));
+    model: modelConfig.model, reasoning: modelConfig.reasoning,chatThinking:modelConfig.chatThinking, restarting: settingUp }));
   app.post('/api/setup', async (req, reply) => {
     if (!needsSetup(modelConfig) || settingUp) return reply.code(409).send({ error: '初始化已完成或正在保存，请刷新页面' });
     if (!options.restart) throw new Error('此启动方式不支持自动重启，请使用应用或容器启动');
@@ -62,8 +63,9 @@ export async function buildServer(db = openDb(), options: { configDir?: string; 
     settingUp = true;
     try {
       const results = await (options.modelCheck || checkConnections)(next.value);
-      if (results.some(r => !r.ok)) { settingUp = false; return reply.code(400).send({ error: '配置尚未保存：' + results.filter(r => !r.ok).map(r => r.service + ' · ' + r.detail).join('；'), results }); }
+      if (results.some(r => !r.ok && r.service!=='vision')) { settingUp = false; return reply.code(400).send({ error: '配置尚未保存：' + results.filter(r => !r.ok && r.service!=='vision').map(r => r.service + ' · ' + r.detail).join('；'), results }); }
       const result = persistInitialSetup(db, modelConfig, options.setupRoot || process.env.LEDGER_POINTER_ROOT || root, setupData, fixedStorage, req.body);
+      saveCapabilities(db,next.value,{text:results.find(r=>r.service==='text')?.state||'unverified',structured:results.find(r=>r.service==='structured')?.state||'unverified',vision:results.find(r=>r.service==='vision')?.state||'unverified'});
       const timer = setTimeout(options.restart, 500); timer.unref();
       return result;
     } catch (e) { settingUp = false; throw e; }
@@ -97,7 +99,7 @@ export async function buildServer(db = openDb(), options: { configDir?: string; 
   app.post('/api/images',{bodyLimit:12*1024*1024},async req=>{
     const {image}=z.object({image:z.string().max(12*1024*1024)}).parse(req.body),path=await saveImage(decodeImageDataUrl(image)),id='web:'+randomUUID();
     receiveMessage(db,id,'local','[用户上传图片，请提取文字]');db.prepare('INSERT INTO message_images(message_id,path) VALUES(?,?)').run(id,path);
-    try{return {result:await processMessage(db,id)};}catch{db.prepare("UPDATE messages SET status='needs_attention',error='图片识别失败，尚未入账' WHERE id=?").run(id);throw new Error('图片已保存，识别失败，尚未入账；可在运行状态重试');}
+    try{return {result:await processMessage(db,id)};}catch(error){const detail=error instanceof ModelFailure?error.message:'图片清单识别失败';db.prepare("UPDATE messages SET status='needs_attention',error=? WHERE id=?").run(detail,id);throw new Error(detail+'；图片已保存，尚未入账，可在运行状态重试');}
   });
   app.get('/api/accounts', async () => accountOverview(db));
   app.post('/api/accounts', async req => saveAccount(db, req.body));
@@ -115,7 +117,8 @@ export async function buildServer(db = openDb(), options: { configDir?: string; 
     confirmations: db.prepare('SELECT * FROM confirmations WHERE resolved_at IS NULL ORDER BY id DESC').all().map(raw => { const c = raw as { action_json: string }; const saved = JSON.parse(c.action_json); return { ...c, action: saved.action, candidates: saved.candidates.map((id: number) => { try { return getEntry(db, id); } catch { return null; } }).filter(Boolean) }; }),
     outbox: (db.prepare("SELECT COUNT(*) AS n FROM outbox WHERE status='pending'").get() as { n: number }).n,
     lastBackup: setting(db, 'backup_date'), dataDir, reminder: reminderSettings(db), model: setting(db, 'model', modelConfig.model), reasoning: setting(db, 'reasoning', modelConfig.reasoning),
-    baseUrl: modelConfig.aiBaseUrl, aiConfigured: !!modelConfig.aiKey, feishuConfigured: !!config.appId && !!config.appSecret, appId: config.appId, channel: config.channel }));
+    baseUrl: modelConfig.aiBaseUrl, aiConfigured: !!modelConfig.aiKey, aiMode:modelConfig.aiMode,apiType:modelConfig.apiType,chatThinking:modelConfig.chatThinking,
+    capabilities:modelCapabilities(db,currentModelService(db,modelConfig)),feishuConfigured: !!config.appId && !!config.appSecret, appId: config.appId, channel: config.channel }));
   app.post('/api/bind', async req => {
     const { user } = z.object({ user: z.string().min(1).max(100) }).parse(req.body);
     if (setting(db, 'owner') && user !== setting(db, 'owner')) throw new Error('v0.1不支持切换账本所有者');
@@ -129,7 +132,11 @@ export async function buildServer(db = openDb(), options: { configDir?: string; 
     if (checkingModel) return reply.code(409).send({ error: '已有连接测试正在进行，请稍后重试' });
     const next = resolveModelService(currentModelService(db, modelConfig), req.body);
     checkingModel = true;
-    try { return { results: await (options.modelCheck || checkConnections)(next, { feishu: false }) }; }
+    try {
+      const results=await (options.modelCheck || checkConnections)(next, { feishu: false });
+      saveCapabilities(db,next,{text:results.find(r=>r.service==='text')?.state||'unverified',structured:results.find(r=>r.service==='structured')?.state||'unverified',vision:results.find(r=>r.service==='vision')?.state||'unverified'});
+      return {results};
+    }
     finally { checkingModel = false; }
   });
   app.put('/api/reminders', async req => saveReminderSettings(db, req.body));
@@ -137,7 +144,7 @@ export async function buildServer(db = openDb(), options: { configDir?: string; 
     const { text } = z.object({ text: z.string().trim().min(1).max(4000) }).parse(req.body); const id = 'web:' + randomUUID();
     receiveMessage(db, id, 'local', text);
     try { const result=await processMessage(db,id);return {result,images:(db.prepare('SELECT id FROM chart_files WHERE message_id=?').all(id) as {id:string}[]).map(c=>'/api/charts/file/'+c.id)}; }
-    catch { db.prepare("UPDATE messages SET status='needs_attention',error='模型或输入处理失败，尚未入账' WHERE id=?").run(id); throw new Error('模型或输入处理失败，消息已保存，尚未入账；可在运行状态中重试'); }
+    catch(error) {const detail=error instanceof ModelFailure?error.message:'模型或输入处理失败';db.prepare("UPDATE messages SET status='needs_attention',error=? WHERE id=?").run(detail,id);throw new Error(detail+'；消息已保存，尚未入账，可在运行状态重试'); }
   });
   app.post('/api/confirm', async req => {
     const { id, entry } = z.object({ id: z.number().int().positive(), entry: z.number().int().positive() }).parse(req.body);

@@ -91,7 +91,7 @@ internal static class RecordMoney
     }
     static Dictionary<string, object> Config(string installed, string home)
     {
-        string script = "const {config,dataDir,logsDir}=await import(process.argv[1]);console.log(JSON.stringify({port:config.port,configured:!!config.appId&&!!config.appSecret&&!!config.aiBaseUrl&&!!config.aiKey&&!!config.model,dataDir,logsDir}));";
+        string script = "const {config,dataDir,logsDir}=await import(process.argv[1]);console.log(JSON.stringify({port:config.port,configured:!!config.appId&&!!config.appSecret&&(config.aiMode==='fixed'||!!config.aiBaseUrl&&!!config.aiKey&&!!config.model),dataDir,logsDir}));";
         string uri = new Uri(Path.Combine(installed, "script", "build", "config.js")).AbsoluteUri;
         using (var process = Process.Start(NodeInfo(installed, "--input-type=module -e " + Quote(script) + " " + Quote(uri), home))) {
             string output = process.StandardOutput.ReadToEnd(); string error = process.StandardError.ReadToEnd(); process.WaitForExit();

@@ -24,7 +24,7 @@ test('conversation history includes both sides, limits turns and excludes other 
   receiveMessage(db, 'current', 'owner', '可以，就这样');
   receiveMessage(db, 'future', 'owner', '未来消息'); applyActions(db, 'future', [{ type: 'clarify', question: '未来回执' }]);
   const input = conversationInput(db, '可以，就这样', { user: 'owner', messageId: 'current' });
-  assert.equal(input.length, 41); assert.equal(input[0].content, '消息3'); assert.equal(input[1].content, '回执3');
+  assert.equal(input.length, 17); assert.equal(input[0].content, '消息15'); assert.equal(input[1].content, '回执15');
   assert.deepEqual(input.at(-1), { role: 'user', content: '可以，就这样' }); assert.ok(!JSON.stringify(input).includes('不应出现')); assert.ok(!JSON.stringify(input).includes('未来回执')); db.close();
 });
 test('confirmed proposal survives database reopening and only applies once without model access', async () => {

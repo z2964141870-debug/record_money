@@ -67,7 +67,7 @@ do {
     env["LEDGER_POINTER_ROOT"] = location.path
     env["LEDGER_DIRECTORY_PICKER"] = installed.appendingPathComponent("bin/launcher").path
     let node = installed.appendingPathComponent("bin/node").path
-    let info = try command(node, ["--input-type=module", "-e", "const {config}=await import(process.argv[1]); console.log(JSON.stringify({port:config.port,configured:!!config.appId&&!!config.appSecret&&!!config.aiKey&&!!config.model}));", installed.appendingPathComponent("script/build/config.js").absoluteString], environment: env)
+    let info = try command(node, ["--input-type=module", "-e", "const {config}=await import(process.argv[1]); console.log(JSON.stringify({port:config.port,configured:!!config.appId&&!!config.appSecret&&(config.aiMode==='fixed'||!!config.aiBaseUrl&&!!config.aiKey&&!!config.model)}));", installed.appendingPathComponent("script/build/config.js").absoluteString], environment: env)
     guard let bytes = info.data(using: .utf8), let parsed = try JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { throw NSError(domain: "RecordMoney", code: 3) }
     var port = parsed["port"] as? Int ?? 4317
     if installOnly { print("安装验收成功：" + installed.path); exit(0) }

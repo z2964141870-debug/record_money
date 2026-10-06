@@ -9,6 +9,7 @@ import { saveImage } from './images.js';
 import { downloadFeishuImage, FeishuImageError } from './feishu-images.js';
 import { renderChart } from './charts.js';
 import { createDingTalkTransport, DingTalkImageError, type DingMessage } from './dingtalk.js';
+import { ModelFailure, modelCapabilities, modelRuntime } from './model-api.js';
 export type BotStatus = { state: string; lastReceived: string | null; lastSent: string | null; lastError: string | null };
 export function acceptDingMessage(db: DB, message: DingMessage) {
   const owner = setting(db, 'owner');
@@ -40,6 +41,8 @@ export function createBot(db: DB) {
       if (message && message.next_attempt <= Date.now()) {
         try {
           const image=db.prepare('SELECT image_key,path FROM message_images WHERE message_id=?').get(message.id) as {image_key:string;path:string|null}|undefined;
+          if(image && config.aiMode==='fixed')throw new ModelFailure('service','未启用AI图片识别，请发文字；账单图表仍可使用');
+          if(image && modelCapabilities(db,modelRuntime(db)).vision==='unsupported')throw new ModelFailure('unsupported','当前模型不支持读图，请发文字或更换模型');
           if(image&&(!image.path||!existsSync(image.path))) {
             if(!client && !ding)throw new Error('图片下载服务尚未配置');
             const bytes=ding ? await ding.download(image.image_key) : await downloadFeishuImage(()=>client!.im.messageResource.get({path:{message_id:message.id,file_key:image.image_key},params:{type:'image'}}));
@@ -50,6 +53,11 @@ export function createBot(db: DB) {
         catch (error) {
           const msg = db.prepare('SELECT user_id,attempts FROM messages WHERE id=?').get(message.id) as { user_id: string; attempts: number };
           const attempts = msg.attempts + 1;
+          if(error instanceof ModelFailure) {
+            const retryable=['network'].includes(error.reason)||error.reason==='service'&&/HTTP (429|5\d\d)/.test(error.message);
+            db.prepare('UPDATE messages SET attempts=?,next_attempt=?,status=?,error=? WHERE id=?').run(attempts,Date.now()+Math.min(300000,15000*2**attempts),retryable&&attempts<3?'pending':'needs_attention',error.message,message.id);
+            queueReply(db,msg.user_id,error.message+'；尚未入账，可在网页重试。','failure:'+message.id);return;
+          }
           if (error instanceof FeishuImageError || error instanceof DingTalkImageError) {
             db.prepare('UPDATE messages SET attempts=?,next_attempt=?,status=?,error=? WHERE id=?').run(attempts, Date.now() + Math.min(300000, 15000 * 2 ** attempts), error.retryable && attempts < 3 ? 'pending' : 'needs_attention', error.message, message.id);
             queueReply(db, msg.user_id, error.message, 'image-failure:' + message.id);

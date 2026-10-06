@@ -88,6 +88,6 @@ test('model-only connection check needs no Feishu credentials and sends no Feish
   const results = await checkConnections(original, { feishu: false, fetch: async input => {
     requested.push(String(input)); return new Response(JSON.stringify({ error: { message: 'private-provider-body' } }), { status: 401, headers: { 'Content-Type': 'application/json' } });
   } });
-  assert.equal(results.length, 2); assert.ok(results.every(r => !r.ok)); assert.ok(requested.every(u => u.startsWith(original.aiBaseUrl)));
+  assert.equal(results.length, 3); assert.ok(results.every(r => !r.ok)); assert.ok(requested.every(u => u.startsWith(original.aiBaseUrl)));
   assert.ok(!JSON.stringify(results).includes('private-provider-body'));
 });

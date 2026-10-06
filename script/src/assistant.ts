@@ -10,6 +10,9 @@ import { analyzeLedgerImage } from './images.js';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createImageDraft, latestImageDraft, reviewImageDraft, renderImageDraft, imageAlreadyImported } from './image-ledger.js';
+import { config } from './config.js';
+import { fixedCommands, fixedHint, CommandError } from './fixed-commands.js';
+import { modelCapabilities, modelRuntime, ModelFailure } from './model-api.js';
 export function queueReply(db: DB, user: string, text: string, dedup: string) {
   db.prepare('INSERT OR IGNORE INTO outbox(user_id,text,dedup,created_at) VALUES(?,?,?,?)').run(user, text, dedup, new Date().toISOString());
 }
@@ -178,6 +181,9 @@ async function processNextMessage(db: DB, id: string) {
   if (message.status === 'done') return message.result;
   const image = db.prepare('SELECT path,extracted_text,content_hash FROM message_images WHERE message_id=?').get(id) as { path: string | null; extracted_text: string | null; content_hash:string|null } | undefined;
   if(image) {
+    const runtime=modelRuntime(db);
+    if(config.aiMode==='fixed')throw new ModelFailure('service','未启用AI图片识别，请发文字；账单图表仍可使用');
+    if(modelCapabilities(db,runtime).vision==='unsupported')throw new ModelFailure('unsupported','当前模型不支持读图，请发文字或更换模型');
     if(!image.path)throw new Error('图片尚未下载，请核对飞书图片资源权限');
     if (!image.content_hash) db.prepare('UPDATE message_images SET content_hash=? WHERE message_id=?').run(createHash('sha256').update(readFileSync(image.path)).digest('hex'),id);
     if (imageAlreadyImported(db,id)) return applyActions(db,id,[{type:'reply',text:'这张图片已有确认入账记录，不再次导入。'}]);
@@ -216,6 +222,19 @@ async function processNextMessage(db: DB, id: string) {
     if (message.user_id !== 'local') queueReply(db, message.user_id, result, 'message:' + id);
     return result;
   })();
+  try {
+    const fixed=fixedCommands(message.text,today(new Date(message.received_at)));
+    if(fixed) {
+      try {return applyActions(db,id,fixed);}catch(error){
+        if (error instanceof TypeError || (error && typeof error === 'object' && 'code' in error && String(error.code).startsWith('SQLITE_'))) throw error;
+        throw new CommandError(error instanceof Error?error.message:'命令执行失败');
+      }
+    }
+  } catch(error) {
+    if(error instanceof CommandError)return applyActions(db,id,[{type:'reply',text:'未执行：'+error.message}]);
+    throw error;
+  }
+  if(config.aiMode==='fixed')return applyActions(db,id,[{type:'reply',text:fixedHint}]);
   const actions = await parseText(db, message.text, today(new Date(message.received_at)), { user: message.user_id, messageId: id });
   return applyActions(db, id, protectImageActions(db,id,message.user_id,message.text,actions));
 }

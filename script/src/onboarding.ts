@@ -2,15 +2,15 @@ import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { z } from 'zod';
 import type { DB } from './db.js';
-import { saveSetupConfig, storageRoot } from './config-files.js';
+import { saveSetupConfig, storageRoot, setupSchema, validateModelConfig } from './config-files.js';
 import type { config } from './config.js';
 
 export function needsSetup(runtime: typeof config) {
-  return !runtime.appId || !runtime.appSecret || !runtime.aiBaseUrl || !runtime.aiKey || !runtime.model;
+  return !runtime.appId || !runtime.appSecret || (runtime.aiMode !== 'fixed' && (!runtime.aiBaseUrl || !runtime.aiKey || !runtime.model));
 }
 export function resolveSetup(runtime: typeof config, data: string, fixedStorage: boolean, raw: unknown) {
-  const input = z.object({ channel: z.enum(['feishu', 'dingtalk']).default('feishu'), storage: z.string().max(2000).optional(), appId: z.string(), appSecret: z.string(),
-    aiBaseUrl: z.string(), aiKey: z.string(), model: z.string(), reasoning: z.enum(['none', 'low', 'medium', 'high']).default('none') }).parse(raw);
+  const input = setupSchema.omit({port:true}).extend({storage:z.string().max(2000).optional()}).parse(raw);
+  validateModelConfig(input);
   const storage = input.storage ? storageRoot(input.storage) : dirname(data);
   if (fixedStorage && storage !== dirname(data)) throw new Error('存储位置已由部署配置指定');
   return { storage, value: { ...input, port: runtime.port } };
