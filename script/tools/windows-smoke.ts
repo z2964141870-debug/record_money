@@ -19,18 +19,21 @@ try {
   execFileSync(powershell, ['-NoProfile', '-NonInteractive', '-Command', '$ErrorActionPreference="Stop"; Expand-Archive -LiteralPath $env:RM_ARCHIVE -DestinationPath $env:RM_EXTRACT'],
     { env: { ...process.env, RM_ARCHIVE: archive, RM_EXTRACT: join(temp, 'extracted') } });
   const bundle = join(temp, 'extracted', `record-money-v${version}-windows-x64`);
+  console.log('Extracted Windows package');
   launcher = join(bundle, 'RecordMoney.exe');
   const run = (args: string[]) => execFileSync(launcher, args, { timeout: 90000, encoding: 'utf8' });
   const server = createServer(); await new Promise<void>(done => server.listen(0, '127.0.0.1', done));
   currentPort = (server.address() as { port: number }).port;
   await new Promise<void>(done => server.close(() => done()));
   run(['--install-only', '--destination', home]);
+  console.log('Installed into an isolated Unicode path');
   assert.ok(existsSync(join(home, 'desktop', version, 'bin/node.exe')));
   for (const doc of ['FEISHU.md', 'DINGTALK.md']) assert.ok(existsSync(join(bundle, 'reports', doc)));
   run(['--headless', '--destination', home, '--port', String(currentPort)]);
   const url = `http://127.0.0.1:${currentPort}`;
   let bootstrap = await (await fetch(url + '/api/bootstrap')).json();
   assert.equal(bootstrap.setupRequired, true); assert.equal(bootstrap.version, version);
+  console.log('Started bundled service');
   run(['--stop', '--destination', home]);
 
   saveSetupConfig(home, storage, { appId: 'cli_windowsqa', appSecret: 'fixture-secret', aiBaseUrl: 'https://fixture.invalid/v1', aiKey: 'fixture-key', model: 'fixture-vision', port: currentPort });
@@ -40,6 +43,7 @@ try {
   assert.equal(bootstrap.setupRequired, false);
   const setup = await (await fetch(url + '/api/setup')).json();
   assert.equal(setup.storage, storage); assert.equal(setup.canChooseFolder, true);
+  console.log('Reopened with separate ledger storage');
   const post = async (path: string, body: unknown) => {
     const response = await fetch(url + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Ledger-Token': bootstrap.csrf }, body: JSON.stringify(body) });
     const result = await response.json(); assert.equal(response.status, 200, JSON.stringify(result)); return result;
@@ -50,6 +54,7 @@ try {
     const response = await fetch(url + chart.url); assert.equal(response.status, 200);
     const png = Buffer.from(await response.arrayBuffer()); assert.equal(png.subarray(0, 8).toString('hex'), '89504e470d0a1a0a'); assert.ok(png.length > 1000);
   }
+  console.log('Generated three PNG charts');
   const db = new Database(join(storage, 'data/ledger.sqlite'));
   db.prepare("INSERT INTO messages(id,user_id,text,received_at,status) VALUES(?,?,?,?,?)").run('windows:qa', 'fixture-owner', '记忆验收', new Date().toISOString(), 'done');
   db.prepare("INSERT INTO settings(key,value) VALUES(?,?)").run('windows_fixture', 'preserved');
@@ -65,6 +70,7 @@ try {
   }
   await assert.rejects(fetch(url + '/api/bootstrap', { signal: AbortSignal.timeout(1000) }));
   run(['--headless', '--destination', home]);
+  console.log('Restart and crash cleanup passed');
 
   // Simulate a later package to exercise the real launcher backup and upgrade path.
   const next = '99.0.0', upgrade = join(temp, 'upgrade'); cpSync(bundle, upgrade, { recursive: true });

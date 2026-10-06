@@ -136,11 +136,16 @@ internal static class RecordMoney
         string exe = Path.Combine(installed, "bin", "RecordMoney.exe");
         var info = new ProcessStartInfo(exe, "--serve --destination " + Quote(home) + " --port " + port);
         info.UseShellExecute = false; info.CreateNoWindow = true; info.WorkingDirectory = installed;
+        // The background process must not retain the launching terminal's output pipes.
+        info.RedirectStandardOutput = true; info.RedirectStandardError = true; info.RedirectStandardInput = true;
         using (var process = Process.Start(info)) {
             for (int i = 0; i < 80; i++) {
                 var status = Control(home, "status");
                 if (status != null && Convert.ToInt32(status["port"]) == port) {
-                    try { if (Convert.ToString(Http(port, "/api/bootstrap")["version"]) == PackageVersion(installed)) return; } catch { }
+                    try {
+                        var bootstrap = Http(port, "/api/bootstrap");
+                        if (Convert.ToString(bootstrap["version"]) == PackageVersion(installed) && Convert.ToInt32(bootstrap["pid"]) == Convert.ToInt32(status["childPid"])) return;
+                    } catch { }
                 }
                 if (process.HasExited) break;
                 Thread.Sleep(250);
@@ -166,6 +171,8 @@ internal static class RecordMoney
         if (Array.IndexOf(args, "--install-only") >= 0) { Console.WriteLine(Json.Serialize(new { installed = installed, version = version })); return; }
         var old = Control(home, "status");
         if (old != null && new System.Version(Convert.ToString(old["version"])) >= new System.Version(version)) {
+            var bootstrap = Http(Convert.ToInt32(old["port"]), "/api/bootstrap");
+            if (Convert.ToInt32(bootstrap["pid"]) != Convert.ToInt32(old["childPid"])) throw new Exception("后台服务尚未就绪，请检查端口或稍后重试。");
             if (!isolated) Open(Convert.ToInt32(old["port"])); return;
         }
         int port = Convert.ToInt32(config["port"]);
@@ -173,6 +180,7 @@ internal static class RecordMoney
         if (old != null) {
             port = Convert.ToInt32(old["port"]);
             var bootstrap = Http(port, "/api/bootstrap");
+            if (Convert.ToInt32(bootstrap["pid"]) != Convert.ToInt32(old["childPid"])) throw new Exception("端口不是当前账本服务，升级已取消。");
             Http(port, "/api/backup", Convert.ToString(bootstrap["csrf"]));
             Stop(home);
         } else if (!Available(port)) {
@@ -244,7 +252,8 @@ internal static class RecordMoney
                     using (var reader = new StreamReader(pipe, Encoding.UTF8, false, 1024, true))
                     using (var writer = new StreamWriter(pipe, new UTF8Encoding(false), 1024, true)) {
                         string action = reader.ReadLine();
-                        writer.AutoFlush = true; writer.WriteLine(Json.Serialize(new { port = Port, version = Version, installed = Installed, pid = Process.GetCurrentProcess().Id }));
+                        int childPid = 0; try { if (Child != null && !Child.HasExited) childPid = Child.Id; } catch { }
+                        writer.AutoFlush = true; writer.WriteLine(Json.Serialize(new { port = Port, version = Version, installed = Installed, pid = Process.GetCurrentProcess().Id, childPid = childPid }));
                         if (action == "stop") { Stopping = true; KillChild(); Application.Exit(); }
                     }
                 }
