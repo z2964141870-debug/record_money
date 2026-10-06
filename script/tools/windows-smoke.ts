@@ -56,6 +56,15 @@ try {
   const before = db.prepare('SELECT * FROM entries ORDER BY id').all() as Record<string, unknown>[]; db.close();
   run(['--stop', '--destination', home]); run(['--headless', '--destination', home]);
   assert.deepEqual(await (await fetch(url + '/api/entries')).json(), before.map(row => ({ ...row, account_name: null, to_account_name: null, refunded_amount: 0 })));
+  const status = JSON.parse(run(['--status', '--destination', home]).trim());
+  execFileSync('taskkill.exe', ['/PID', String(status.pid), '/F']);
+  for (let i = 0; i < 40; i++) {
+    try { await fetch(url + '/api/bootstrap', { signal: AbortSignal.timeout(500) }); }
+    catch { break; }
+    await new Promise(done => setTimeout(done, 100));
+  }
+  await assert.rejects(fetch(url + '/api/bootstrap', { signal: AbortSignal.timeout(1000) }));
+  run(['--headless', '--destination', home]);
 
   // Simulate a later package to exercise the real launcher backup and upgrade path.
   const next = '99.0.0', upgrade = join(temp, 'upgrade'); cpSync(bundle, upgrade, { recursive: true });
@@ -73,7 +82,7 @@ try {
   check.close();
   assert.ok(existsSync(join(storage, 'data/backups')));
   assert.equal(readFileSync(join(home, 'data/runtime-location.txt'), 'utf8').trim(), storage);
-  console.log('Windows smoke passed: extracted package, Unicode paths, native dependencies, startup, three PNG charts, restart, backup, upgrade and preserved ledger/history.');
+  console.log('Windows smoke passed: extracted package, Unicode paths, native dependencies, startup, three PNG charts, restart, supervisor crash cleanup, backup, upgrade and preserved ledger/history.');
 } finally {
   if (launcher) { try { execFileSync(launcher, ['--stop', '--destination', home], { timeout: 20000 }); } catch {} }
   rmSync(temp, { recursive: true, force: true });

@@ -7,6 +7,7 @@ using System.IO.Pipes;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Principal;
@@ -15,6 +16,7 @@ using System.Threading;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
 using Microsoft.Win32;
+using Microsoft.Win32.SafeHandles;
 
 internal static class RecordMoney
 {
@@ -25,6 +27,24 @@ internal static class RecordMoney
     static Process Child;
     static int Port;
     static string Runtime, Installed, Version;
+    static SafeFileHandle Job;
+
+    [StructLayout(LayoutKind.Sequential)] struct JobLimits {
+        public long ProcessTime, JobTime;
+        public uint Flags;
+        public UIntPtr MinimumWorkingSet, MaximumWorkingSet;
+        public uint ActiveProcesses;
+        public UIntPtr Affinity;
+        public uint Priority, Scheduling;
+    }
+    [StructLayout(LayoutKind.Sequential)] struct IoCounters { public ulong ReadOperations, WriteOperations, OtherOperations, ReadBytes, WriteBytes, OtherBytes; }
+    [StructLayout(LayoutKind.Sequential)] struct ExtendedJobLimits {
+        public JobLimits Basic; public IoCounters Io;
+        public UIntPtr ProcessMemory, JobMemory, PeakProcessMemory, PeakJobMemory;
+    }
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern SafeFileHandle CreateJobObject(IntPtr attributes, string name);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool SetInformationJobObject(SafeFileHandle job, int information, ref ExtendedJobLimits limits, uint size);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool AssignProcessToJobObject(SafeFileHandle job, IntPtr process);
 
     static string Argument(string[] args, string name, string fallback)
     {
@@ -190,6 +210,10 @@ internal static class RecordMoney
         using (var mutex = new Mutex(false, "Local\\RecordMoney-Service-" + Identity(Runtime))) {
             bool owned; try { owned = mutex.WaitOne(0); } catch (AbandonedMutexException) { owned = true; }
             if (!owned) return;
+            // Closing the supervisor also closes its child, including after a forced termination.
+            Job = CreateJobObject(IntPtr.Zero, null);
+            var limits = new ExtendedJobLimits(); limits.Basic.Flags = 0x2000;
+            if (Job.IsInvalid || !SetInformationJobObject(Job, 9, ref limits, (uint)Marshal.SizeOf(typeof(ExtendedJobLimits)))) throw new Exception("无法建立后台进程管理。");
             var pipeThread = new Thread(PipeLoop); pipeThread.IsBackground = true; pipeThread.Start();
             var worker = new Thread(ServerLoop); worker.IsBackground = true; worker.Start();
             Application.EnableVisualStyles();
@@ -205,7 +229,7 @@ internal static class RecordMoney
                 icon.ContextMenuStrip = menu; icon.DoubleClick += delegate { Open(Port); };
                 Application.Run(); icon.Visible = false;
             }
-            Stopping = true; KillChild(); worker.Join(5000); mutex.ReleaseMutex();
+            Stopping = true; KillChild(); worker.Join(5000); Job.Dispose(); mutex.ReleaseMutex();
         }
     }
     static void KillChild() { try { if (Child != null && !Child.HasExited) Child.Kill(); } catch { } }
@@ -220,7 +244,7 @@ internal static class RecordMoney
                     using (var reader = new StreamReader(pipe, Encoding.UTF8, false, 1024, true))
                     using (var writer = new StreamWriter(pipe, new UTF8Encoding(false), 1024, true)) {
                         string action = reader.ReadLine();
-                        writer.AutoFlush = true; writer.WriteLine(Json.Serialize(new { port = Port, version = Version, installed = Installed }));
+                        writer.AutoFlush = true; writer.WriteLine(Json.Serialize(new { port = Port, version = Version, installed = Installed, pid = Process.GetCurrentProcess().Id }));
                         if (action == "stop") { Stopping = true; KillChild(); Application.Exit(); }
                     }
                 }
@@ -240,7 +264,9 @@ internal static class RecordMoney
                     process.StartInfo = info; Child = process;
                     process.OutputDataReceived += delegate(object sender, DataReceivedEventArgs e) { Log(Path.Combine(logs, "stdout.log"), e.Data); };
                     process.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs e) { Log(Path.Combine(logs, "stderr.log"), e.Data); };
-                    process.Start(); process.BeginOutputReadLine(); process.BeginErrorReadLine();
+                    process.Start();
+                    if (!AssignProcessToJobObject(Job, process.Handle)) { process.Kill(); throw new Exception("无法管理后台进程。"); }
+                    process.BeginOutputReadLine(); process.BeginErrorReadLine();
                     if (Stopping) KillChild(); process.WaitForExit();
                     if (!Stopping && process.ExitCode != 75) Thread.Sleep(3000);
                 }
@@ -257,6 +283,7 @@ internal static class RecordMoney
                     if (picker.ShowDialog() == DialogResult.OK) Console.WriteLine(picker.SelectedPath); } return 0;
             }
             if (Array.IndexOf(args, "--stop") >= 0) { Stop(Argument(args, "--destination", DefaultHome)); return 0; }
+            if (Array.IndexOf(args, "--status") >= 0) { Console.WriteLine(Json.Serialize(Control(Argument(args, "--destination", DefaultHome), "status"))); return 0; }
             if (Array.IndexOf(args, "--serve") >= 0) { Serve(args); return 0; }
             string home = Argument(args, "--destination", DefaultHome);
             using (var mutex = new Mutex(false, "Local\\RecordMoney-Install-" + Identity(home))) {

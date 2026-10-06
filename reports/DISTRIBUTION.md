@@ -2,6 +2,16 @@
 
 下载入口：[GitHub Releases](https://github.com/z2964141870-debug/record_money/releases/latest)。机器人创建与权限：[飞书](FEISHU.md) / [钉钉](DINGTALK.md)。
 
+## Windows
+
+1. Windows 10 22H2或Windows 11，64位Intel/AMD电脑，下载 `windows-x64.zip`。
+2. 先解压整个文件夹，再双击 `RecordMoney.exe`。无需Node、Docker或管理员权限；目前尚未代码签名，首次打开可能有系统安全提示。
+3. 浏览器填写机器人和模型配置。创建机器人、开权限及绑定步骤见 [飞书](FEISHU.md) / [钉钉](DINGTALK.md)。存储位置可选择文件夹。
+
+首次打开会创建桌面快捷方式并设置登录自启。关闭网页后继续运行；右下角托盘菜单可打开账本、停止服务或关闭登录自启。睡眠、关机、退出登录或断网会中断。
+
+默认数据位置：`%LOCALAPPDATA%\RecordMoney`。升级时解压新包并打开新版EXE，自动备份并保留配置、账本和聊天；安装成功后，下载的解压文件夹可删除。ARM版Windows暂未单独验收。
+
 ## Mac
 
 1. M系列下载 `macos-arm64.zip`，Intel下载 `macos-x64.zip`。要求macOS 14+。
@@ -55,4 +65,4 @@ ssh -N -L 4317:127.0.0.1:4317 your-host
 
 Mac源码后台安装：`npm run service:install`；停止：`npm run service:stop`；卸载启动项但保留数据：`npm run service:uninstall`。
 
-目前提供Mac与Linux安装，Windows原生安装暂缓。模型接口要求见 [模型配置](MODELS.md)。
+Windows打包：`npm run package:windows`，在Windows x64运行；安装包验收：`npm run smoke:windows`。模型接口要求见 [模型配置](MODELS.md)。
