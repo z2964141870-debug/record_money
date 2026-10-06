@@ -27,7 +27,7 @@ try {
   assert.equal((db.prepare('SELECT COUNT(*) n FROM entries').get() as {n:number}).n,0);
   assert.equal((db.prepare('SELECT COUNT(*) n FROM chart_files').get() as {n:number}).n,1);
   receiveMessage(db,'v02:image','local','[用户上传图片]');db.prepare('INSERT INTO message_images(message_id,path,extracted_text) VALUES(?,?,?)').run('v02:image',path,ocr.text);
-  await processMessage(db,'v02:image');receiveMessage(db,'v02:image-book','local','把这张图片记到账本');console.log('图片入账方案：'+await processMessage(db,'v02:image-book'));
+  await processMessage(db,'v02:image');receiveMessage(db,'v02:image-book','local','这张图是2026年，付款账户支付宝余额，保留所有R记录，已核对。请展示最终入账方案。');console.log('图片入账方案：'+await processMessage(db,'v02:image-book'));
   assert.ok(pendingDialogue(db,'local'),'图片入账需先确认');assert.equal((db.prepare('SELECT COUNT(*) n FROM entries').get() as {n:number}).n,0);
   receiveMessage(db,'v02:image-confirm','local','确认');await processMessage(db,'v02:image-confirm');assert.equal((db.prepare('SELECT SUM(amount) n FROM entries').get() as {n:number}).n,2000);
   console.log('v0.2核验通过：物品未重复记支出，助学贷款累计36000元，起始日未知保留，图表来自数据库。');

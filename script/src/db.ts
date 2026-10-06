@@ -54,6 +54,8 @@ export function openDb(path = join(dataDir, 'ledger.sqlite')) {
       before_json TEXT, after_json TEXT NOT NULL, created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS message_images (message_id TEXT PRIMARY KEY REFERENCES messages(id), image_key TEXT, path TEXT, extracted_text TEXT);
     CREATE TABLE IF NOT EXISTS image_imports (message_id TEXT PRIMARY KEY REFERENCES message_images(message_id), imported_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS image_drafts (message_id TEXT PRIMARY KEY REFERENCES message_images(message_id), analysis_json TEXT NOT NULL,
+      review_json TEXT NOT NULL, status TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS chart_files (id TEXT PRIMARY KEY, message_id TEXT, kind TEXT NOT NULL, path TEXT NOT NULL, snapshot_json TEXT NOT NULL, created_at TEXT NOT NULL);
   `);
   const entryColumns = new Set((db.pragma('table_info(entries)') as { name: string }[]).map(c => c.name));
@@ -63,6 +65,7 @@ export function openDb(path = join(dataDir, 'ledger.sqlite')) {
   const outboxColumns = new Set((db.pragma('table_info(outbox)') as { name: string }[]).map(c => c.name));
   for (const column of ['image_path', 'image_key']) if (!outboxColumns.has(column)) db.exec(`ALTER TABLE outbox ADD COLUMN ${column} TEXT`);
   if(!(db.pragma('table_info(dialogue_pending)') as {name:string}[]).some(c=>c.name==='source_image_id'))db.exec('ALTER TABLE dialogue_pending ADD COLUMN source_image_id TEXT');
+  if(!(db.pragma('table_info(message_images)') as {name:string}[]).some(c=>c.name==='content_hash'))db.exec('ALTER TABLE message_images ADD COLUMN content_hash TEXT');
   const confirmationSchema = db.prepare("SELECT sql FROM sqlite_master WHERE name='confirmations'").get() as { sql: string };
   if (confirmationSchema.sql.includes('message_id TEXT UNIQUE')) {
     db.transaction(() => db.exec(`

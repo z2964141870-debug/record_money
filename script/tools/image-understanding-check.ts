@@ -6,7 +6,7 @@ import OpenAI from 'openai';
 import { root, dataDir, config } from '../src/config.js';
 import { openDb, setting, setSetting } from '../src/db.js';
 import { normalizeImage, extractImageText } from '../src/images.js';
-import { receiveMessage, processMessage } from '../src/assistant.js';
+import { receiveMessage, applyActions } from '../src/assistant.js';
 import { parseText } from '../src/ai.js';
 import { today } from '../src/ledger.js';
 
@@ -36,7 +36,7 @@ try {
   writeFileSync(cached, JSON.stringify({input_hash:inputHash,ocr},null,2)+'\n', {mode:0o600});
   receiveMessage(db, 'image-test', 'local', '[用户发送图片，请提取文字]');
   db.prepare('INSERT INTO message_images(message_id,path,extracted_text) VALUES(?,?,?)').run('image-test', path, ocr.text);
-  await processMessage(db, 'image-test');
+  applyActions(db,'image-test',[{type:'reply',text:'图片识别文字（待核对）：\n'+ocr.text+'\n尚未修改账本。'}]);
   const analyze = async (id: string, text: string) => {
     receiveMessage(db, id, 'local', text);
     // Parse only: no actions, including proposals, are applied to either database.

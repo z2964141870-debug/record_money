@@ -17,6 +17,7 @@ import {normalizeImage,decodeImageDataUrl} from '../src/images.js';
 import {backupAssets,restoreAssets} from '../src/backup-assets.js';
 import {Readable} from 'node:stream';
 import {downloadFeishuImage,FeishuImageError} from '../src/feishu-images.js';
+import {createImageDraft} from '../src/image-ledger.js';
 test('Feishu image downloads report permission errors separately and retry transient failures',async()=>{
   const permission={response:{status:400,data:Readable.from([JSON.stringify({code:99991672,msg:'Access denied'})])}};
   await assert.rejects(downloadFeishuImage(async()=>{throw permission;}),error=>error instanceof FeishuImageError&&!error.retryable&&error.message.includes('im:message:readonly')&&!error.message.includes('模型'));
@@ -73,16 +74,17 @@ test('bill, pie and funds PNGs use integer-cent snapshots, negative refunds and 
 test('image validation and cached OCR expose text without writing financial records',async()=>{
   const bytes=createCanvas(200,100).toBuffer('image/png');assert.equal((await sharp(await normalizeImage(bytes)).metadata()).format,'png');
   assert.deepEqual(decodeImageDataUrl('data:image/png;base64,'+bytes.toString('base64')),bytes);assert.throws(()=>decodeImageDataUrl('https://example.com/a.png'));await assert.rejects(normalizeImage(Buffer.from('not an image')));
-  const db=openDb(':memory:');receiveMessage(db,'image','local','[用户上传图片]');db.prepare('INSERT INTO message_images(message_id,path,extracted_text) VALUES(?,?,?)').run('image','cached-only','奶茶 实付20.00');
-  assert.match(await processMessage(db,'image'),/尚未修改账本/);assert.equal(summary(db,today(),today()).count,0);assert.equal(await processMessage(db,'image'),(db.prepare('SELECT result FROM messages WHERE id=?').get('image') as {result:string}).result);db.close();
+  const db=openDb(':memory:');receiveMessage(db,'image','local','[用户上传图片]');db.prepare('INSERT INTO message_images(message_id,path,extracted_text,content_hash) VALUES(?,?,?,?)').run('image','cached-only','奶茶 实付20.00','fixture');
+  createImageDraft(db,'image',{text:'奶茶 实付20.00',transactions:[],summaries:[],excluded:[],duplicate_groups:[],uncertain:false});
+  assert.match(await processMessage(db,'image'),/尚未修改账本/);assert.equal(summary(db,today(),today()).count,0);assert.equal(await processMessage(db,'image'),(db.prepare('SELECT result FROM messages WHERE id=?').get('image') as {result:string}).result);
+  receiveMessage(db,'regular','local','奶茶20');assert.equal(protectImageActions(db,'regular','local','奶茶20',[{type:'add',kind:'expense',amount:'20',date:today(),category:'餐饮'}])[0].type,'add');db.close();
 });
-test('image-derived writes are forced into confirmation and the same image cannot import twice',async()=>{
-  const db=openDb(':memory:');receiveMessage(db,'source','local','[图片]');db.prepare('INSERT INTO message_images(message_id,path,extracted_text) VALUES(?,?,?)').run('source','cached','CoCo奶茶20');await processMessage(db,'source');
+test('legacy OCR cannot bypass structured image review or mutate financial records',async()=>{
+  const db=openDb(':memory:');receiveMessage(db,'source','local','[图片]');db.prepare('INSERT INTO message_images(message_id,path,extracted_text) VALUES(?,?,?)').run('source','cached','CoCo奶茶20');applyActions(db,'source',[{type:'reply',text:'旧OCR识别文字，待核对'}]);
   receiveMessage(db,'book','local','记进去');const actions=protectImageActions(db,'book','local','记进去',parseActions({actions:[{type:'add',kind:'expense',amount:'20',date:today(),category:'餐饮'}]}));
-  assert.equal(actions[0].type,'propose');applyActions(db,'book',actions);assert.equal(summary(db,today(),today()).expense,0);
-  receiveMessage(db,'yes','local','确认');await processMessage(db,'yes');assert.equal(summary(db,today(),today()).expense,2000);
+  assert.equal(actions[0].type,'reply');applyActions(db,'book',actions);assert.equal(summary(db,today(),today()).expense,0);
   receiveMessage(db,'again','local','把图片再次入账');const blocked=protectImageActions(db,'again','local','把图片再次入账',parseActions({actions:[{type:'add',kind:'expense',amount:'20',date:today(),category:'餐饮'}]}));
-  assert.equal(blocked[0].type,'reply');applyActions(db,'again',blocked);assert.equal(summary(db,today(),today()).expense,2000);db.close();
+  assert.equal(blocked[0].type,'reply');applyActions(db,'again',blocked);assert.equal(summary(db,today(),today()).expense,0);db.close();
 });
 test('chart and image attachment backups restore portable local paths and pending chart delivery',async()=>{
   const dir=mkdtempSync(join(tmpdir(),'ledger-files-')),path=join(dir,'source.sqlite'),snapshot=join(dir,'backup.sqlite'),restored=join(dir,'restore.sqlite');
