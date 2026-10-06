@@ -32,8 +32,10 @@ try {
   const compiler = join(process.env.SystemRoot || 'C:\\Windows', 'Microsoft.NET/Framework64/v4.0.30319/csc.exe');
   const launcher = join(stage, 'RecordMoney.exe');
   execFileSync(compiler, ['/nologo', '/target:winexe', '/platform:x64', '/optimize+', '/codepage:65001', '/out:' + launcher,
+    '/win32manifest:' + join(root, 'script/desktop/WindowsLauncher.manifest'),
     '/r:System.Windows.Forms.dll', '/r:System.Drawing.dll', '/r:System.Web.Extensions.dll', join(root, 'script/desktop/WindowsLauncher.cs')], { stdio: 'inherit' });
   cpSync(launcher, join(payload, 'bin/RecordMoney.exe'));
+  for (const destination of [stage, join(payload, 'bin')]) cpSync(join(root, 'script/desktop/WindowsLauncher.exe.config'), join(destination, 'RecordMoney.exe.config'));
   mkdirSync(output, { recursive: true });
   const archive = join(output, `record-money-v${version}-windows-x64.zip`);
   if (existsSync(archive)) throw new Error('安装包已存在，请选择新输出目录');

@@ -16,7 +16,7 @@ export function packageFiles(root: string) {
     if (stat.isDirectory()) for (const child of readdirSync(full).sort()) walk(posix.join(path, child));
     else {
       if (/\.env$|\.sqlite(?:-[a-z]+)?$|\.log$|\.pem$|\.key$/.test(path) && path !== 'script/config.example.env') throw new Error('拒绝发布私密或运行文件：' + path);
-      if (path.startsWith('script/') && !/\.(ts|tsx|css|html|json|sh|swift|cs)$/.test(path) && !['script/config.example.env', 'script/Dockerfile', 'script/compose.yaml'].includes(path)) throw new Error('非源文件，拒绝发布：' + path);
+      if (path.startsWith('script/') && !/\.(ts|tsx|css|html|json|sh|swift|cs)$/.test(path) && !['script/config.example.env', 'script/Dockerfile', 'script/compose.yaml', 'script/desktop/WindowsLauncher.manifest', 'script/desktop/WindowsLauncher.exe.config'].includes(path)) throw new Error('非源文件，拒绝发布：' + path);
       const text = readFileSync(full, 'utf8');
       if (/\bsk-[A-Za-z0-9_-]{20,}/.test(text) || /-----BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY-----/.test(text)) throw new Error('疑似密钥，拒绝发布：' + path);
       files.push(path);
