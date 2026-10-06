@@ -45,6 +45,17 @@ internal static class RecordMoney
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern SafeFileHandle CreateJobObject(IntPtr attributes, string name);
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool SetInformationJobObject(SafeFileHandle job, int information, ref ExtendedJobLimits limits, uint size);
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool AssignProcessToJobObject(SafeFileHandle job, IntPtr process);
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] struct StartupInfo {
+        public int Size; public string Reserved, Desktop, Title;
+        public uint X, Y, Width, Height, CharacterWidth, CharacterHeight, FillAttribute, Flags;
+        public ushort ShowWindow, ReservedBytes;
+        public IntPtr ReservedPointer, Input, Output, Error;
+    }
+    [StructLayout(LayoutKind.Sequential)] struct ProcessInformation { public IntPtr Process, Thread; public uint ProcessId, ThreadId; }
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool CreateProcess(
+        string application, StringBuilder arguments, IntPtr processSecurity, IntPtr threadSecurity, bool inheritHandles,
+        uint flags, IntPtr environment, string directory, ref StartupInfo startup, out ProcessInformation information);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
 
     static string Argument(string[] args, string name, string fallback)
     {
@@ -134,11 +145,14 @@ internal static class RecordMoney
     static void LaunchService(string installed, string home, int port)
     {
         string exe = Path.Combine(installed, "bin", "RecordMoney.exe");
-        var info = new ProcessStartInfo(exe, "--serve --destination " + Quote(home) + " --port " + port);
-        info.UseShellExecute = false; info.CreateNoWindow = true; info.WorkingDirectory = installed;
-        // The background process must not retain the launching terminal's output pipes.
-        info.RedirectStandardOutput = true; info.RedirectStandardError = true; info.RedirectStandardInput = true;
-        using (var process = Process.Start(info)) {
+        var startup = new StartupInfo(); startup.Size = Marshal.SizeOf(typeof(StartupInfo)); ProcessInformation information;
+        // Process.Start may inherit unrelated output handles; explicitly detach the supervisor.
+        if (!CreateProcess(exe, new StringBuilder(Quote(exe) + " --serve --destination " + Quote(home) + " --port " + port),
+            IntPtr.Zero, IntPtr.Zero, false, 0x8, IntPtr.Zero, installed, ref startup, out information)) throw new Exception("无法启动后台服务。");
+        Process started;
+        try { started = Process.GetProcessById((int)information.ProcessId); }
+        finally { CloseHandle(information.Thread); CloseHandle(information.Process); }
+        using (var process = started) {
             for (int i = 0; i < 80; i++) {
                 var status = Control(home, "status");
                 if (status != null && Convert.ToInt32(status["port"]) == port) {

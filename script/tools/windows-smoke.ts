@@ -90,8 +90,10 @@ try {
   assert.equal(readFileSync(join(home, 'data/runtime-location.txt'), 'utf8').trim(), storage);
   console.log('Windows smoke passed: extracted package, Unicode paths, native dependencies, startup, three PNG charts, restart, supervisor crash cleanup, backup, upgrade and preserved ledger/history.');
 } catch (error) {
-  const logs = join(storage, 'logs', 'stderr.log');
-  if (existsSync(logs)) console.error(readFileSync(logs, 'utf8').slice(-4000));
+  for (const base of [home, storage]) {
+    const logs = join(base, 'logs', 'stderr.log');
+    if (existsSync(logs)) console.error(readFileSync(logs, 'utf8').slice(-4000));
+  }
   throw error;
 } finally {
   if (launcher) { try { execFileSync(launcher, ['--stop', '--destination', home], { timeout: 20000 }); } catch {} }
