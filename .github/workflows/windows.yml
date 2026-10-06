@@ -1,0 +1,31 @@
+name: Windows Package
+on:
+  push:
+    branches: ['codex/windows-desktop']
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: script/package-lock.json
+      - run: npm ci
+        working-directory: script
+      - run: npm test
+        working-directory: script
+      - run: npm run build
+        working-directory: script
+      - run: npm run package:windows
+        working-directory: script
+      - run: npm run smoke:windows
+        working-directory: script
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: data/releases/*

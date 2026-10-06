@@ -1,6 +1,6 @@
 {
   "name": "record-money",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -15,6 +15,8 @@
     "connections": "tsx tools/connections.ts",
     "release": "tsx tools/release.ts",
     "package:mac": "tsx tools/package-mac.ts",
+    "package:windows": "tsx tools/package-windows.ts",
+    "smoke:windows": "tsx tools/windows-smoke.ts",
     "test": "tsx --test test/*.test.ts",
     "check": "tsc --noEmit",
     "service:install": "tsx tools/service.ts install",

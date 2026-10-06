@@ -46,7 +46,8 @@ test('daily operation README is private, reproducible and records audit operatio
     createEntry(db, { kind: 'expense', amount: 1280, category: '<餐饮>', date });
     db.prepare('UPDATE audit SET created_at=?').run(`${date}T12:00:00.000Z`);
     const path = exportOperationRecord(db, date, dir); const contents = readFileSync(path, 'utf8');
-    assert.match(contents, /12.80 元/); assert.match(contents, /&lt;餐饮&gt;/); assert.equal(statSync(path).mode & 0o777, 0o600);
+    assert.match(contents, /12.80 元/); assert.match(contents, /&lt;餐饮&gt;/);
+    if (process.platform !== 'win32') assert.equal(statSync(path).mode & 0o777, 0o600);
     const before = statSync(path).mtimeMs; exportOperationRecord(db, date, dir); assert.equal(statSync(path).mtimeMs, before);
   } finally { db.close(); rmSync(dir, { recursive: true, force: true }); }
 });

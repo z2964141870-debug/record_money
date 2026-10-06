@@ -19,7 +19,8 @@ test('setup stores private config without copying or replacing a ledger; explici
     const value = { ...fixture, aiKey: 'key#with$quotes"and`backticks' };
     const path = saveSetupConfig(root, storage, value);
     const parsed = dotenv.parse(readFileSync(path)); assert.equal(parsed.AI_API_KEY, value.aiKey); assert.equal(parsed.CHART_FONT_PATH, '/font path/test.ttf');
-    assert.equal(statSync(path).mode & 0o777, 0o600); assert.equal(readFileSync(join(storage, 'data', 'ledger.sqlite'), 'utf8'), 'existing-ledger');
+    if (process.platform !== 'win32') assert.equal(statSync(path).mode & 0o777, 0o600);
+    assert.equal(readFileSync(join(storage, 'data', 'ledger.sqlite'), 'utf8'), 'existing-ledger');
     assert.equal(storagePaths(root, {}).data, join(storage, 'data')); assert.equal(storagePaths(root, {}).logs, join(storage, 'logs'));
     assert.deepEqual(storagePaths(root, { LEDGER_DATA_DIR: join(dir, 'other', 'data') }), { data: join(dir, 'other', 'data'), logs: join(dir, 'other', 'logs') });
     assert.equal(storagePaths(root, { LEDGER_LOGS_DIR: join(dir, 'custom-logs') }).logs, join(dir, 'custom-logs'));
@@ -62,7 +63,7 @@ test('connection failures and wrong image amounts are reported without leaking p
   const errors = await checkConnections(fixture, { fetch: async () => { throw new Error(fixture.aiKey); } });
   assert.ok(errors.every(r => !r.ok)); assert.ok(!JSON.stringify(errors).includes(fixture.aiKey));
 });
-test('release ZIP excludes all runtime data and contains a verifiable manifest', () => {
+test('release ZIP excludes all runtime data and contains a verifiable manifest', { skip: process.platform === 'win32' ? 'Source ZIP is built and verified on Linux; Windows uses its native package smoke test' : false }, () => {
   const root = resolve(import.meta.dirname, '../..'), dir = mkdtempSync(join(tmpdir(), 'money-package-'));
   try {
     const code = join(dir, 'code'); for (const path of packageFiles(root)) { mkdirSync(join(code, path, '..'), { recursive: true }); cpSync(join(root, path), join(code, path)); }

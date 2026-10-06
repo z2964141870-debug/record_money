@@ -69,7 +69,7 @@ test('bill, pie and funds PNGs use integer-cent snapshots, negative refunds and 
     const image=renderChart(s),m=await sharp(image).metadata();assert.equal(m.format,'png');assert.equal(m.width,1100);
     const {data}=await sharp(image).removeAlpha().raw().toBuffer({resolveWithObject:true});assert.ok(data.some(v=>v<100),'chart contains visible content');
   }
-  const dir=mkdtempSync(join(tmpdir(),'ledger-chart-'));try{const c=createChart(db,{kind:'funds',start:today(),end:today()},'test',dir);assert.equal(statSync(c.path).mode&0o777,0o600);}finally{rmSync(dir,{recursive:true,force:true});db.close();}
+  const dir=mkdtempSync(join(tmpdir(),'ledger-chart-'));try{const c=createChart(db,{kind:'funds',start:today(),end:today()},'test',dir);if(process.platform!=='win32')assert.equal(statSync(c.path).mode&0o777,0o600);}finally{rmSync(dir,{recursive:true,force:true});db.close();}
 });
 test('image validation and cached OCR expose text without writing financial records',async()=>{
   const bytes=createCanvas(200,100).toBuffer('image/png');assert.equal((await sharp(await normalizeImage(bytes)).metadata()).format,'png');

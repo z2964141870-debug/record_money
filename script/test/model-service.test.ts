@@ -22,7 +22,7 @@ test('model service persists replacements, keeps blank key and preserves unrelat
     assert.equal(setting(db, 'model'), 'cheap-vision');
     const parsed = dotenv.parse(readFileSync(join(dir, 'config.env'))); assert.equal(parsed.AI_API_KEY, runtime.aiKey);
     assert.equal(parsed.FEISHU_APP_SECRET, 'private-feishu'); assert.equal(parsed.CHART_FONT_PATH, '/font/test.ttf');
-    assert.equal(statSync(join(dir, 'config.env')).mode & 0o777, 0o600);
+    if (process.platform !== 'win32') assert.equal(statSync(join(dir, 'config.env')).mode & 0o777, 0o600);
     saveModelService(db, runtime, dir, { baseUrl: runtime.aiBaseUrl, apiKey: '  ', model: 'another-model', reasoning: 'low' });
     assert.equal(runtime.aiKey, 'new#test$secret'); assert.equal(dotenv.parse(readFileSync(join(dir, 'config.env'))).AI_MODEL, 'another-model');
     saveModelService(db, runtime, dir, { model: 'legacy-model', reasoning: 'none' }); assert.equal(runtime.model, 'legacy-model');
