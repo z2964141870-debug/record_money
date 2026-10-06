@@ -1,0 +1,46 @@
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { homedir } from 'node:os';
+import dotenv from 'dotenv';
+import { z } from 'zod';
+
+const field = z.string().trim().min(1).max(1000).refine(v => !/[\r\n\0]/.test(v), '配置不能包含换行');
+export const setupSchema = z.object({
+  appId: field.regex(/^cli_[a-zA-Z0-9]+$/, '请输入飞书应用App ID'), appSecret: field,
+  aiBaseUrl: field.refine(v => { try { const u = new URL(v); return ['http:', 'https:'].includes(u.protocol) && !u.username && !u.password && !u.search && !u.hash; } catch { return false; } }, '请输入HTTP或HTTPS基础地址，不包含密钥或查询参数'),
+  aiKey: field, model: field.max(100), reasoning: z.enum(['none', 'low', 'medium', 'high']).default('none'),
+  port: z.number().int().min(1024).max(65535).default(4317),
+});
+export type SetupConfig = z.infer<typeof setupSchema>;
+export function storagePaths(root: string, env: NodeJS.ProcessEnv = process.env) {
+  const pointer = join(root, 'data', 'runtime-location.txt');
+  const storage = existsSync(pointer) ? readFileSync(pointer, 'utf8').trim() : root;
+  const data = resolve(env.LEDGER_DATA_DIR || join(storage || root, 'data'));
+  return { data, logs: resolve(env.LEDGER_LOGS_DIR || join(env.LEDGER_DATA_DIR ? dirname(data) : storage || root, 'logs')) };
+}
+export function storageRoot(value: string) {
+  const expanded = value === '~' ? homedir() : value.startsWith('~/') ? join(homedir(), value.slice(2)) : value;
+  if (!isAbsolute(expanded)) throw new Error('存储位置须为绝对路径');
+  return resolve(expanded);
+}
+export function readSetupConfig(data: string) {
+  const path = join(data, 'config.env');
+  return existsSync(path) ? dotenv.parse(readFileSync(path)) : {};
+}
+export function saveSetupConfig(root: string, storage: string, raw: unknown, options: { writePointer?: boolean } = {}) {
+  const c = setupSchema.parse(raw), base = storageRoot(storage), data = join(base, 'data');
+  for (const dir of [data, join(base, 'logs'), ...(options.writePointer === false ? [] : [join(root, 'data')])]) mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const values = { PORT: String(c.port), FEISHU_ENABLED: 'true', FEISHU_APP_ID: c.appId, FEISHU_APP_SECRET: c.appSecret,
+    AI_BASE_URL: c.aiBaseUrl.replace(/\/$/, ''), AI_API_KEY: c.aiKey, AI_MODEL: c.model, AI_REASONING: c.reasoning };
+  // Single quotes preserve #, $, double quotes and backticks in dotenv values.
+  if (Object.values(values).some(v => v.includes("'"))) throw new Error('配置暂不支持单引号');
+  const old = readSetupConfig(data);
+  const body = Object.entries({ ...old, ...values }).map(([k, v]) => {
+    if (!/^[A-Z_][A-Z0-9_]*$/.test(k) || /['\r\n\0]/.test(v)) throw new Error('已有配置包含不支持的字段');
+    return `${k}='${v}'`;
+  }).join('\n') + '\n';
+  const path = join(data, 'config.env'), temp = path + '.tmp';
+  writeFileSync(temp, body, { mode: 0o600 }); chmodSync(temp, 0o600); renameSync(temp, path);
+  if (options.writePointer !== false) writeFileSync(join(root, 'data', 'runtime-location.txt'), base + '\n', { mode: 0o600 });
+  return path;
+}

@@ -24,10 +24,11 @@ export async function buildServer(db = openDb()) {
   const app = Fastify({ logger: { level: 'info', redact: ['req.headers.authorization', 'req.body', 'res.body'] }, logController: new LogController({ disableRequestLogging: true }), bodyLimit: 100_000 });
   const csrf = randomBytes(32).toString('hex');
   const bot = createBot(db);
-  const origins = new Set([`http://127.0.0.1:${config.port}`, `http://localhost:${config.port}`]);
+  const hosts = new Set([config.port, config.webPort].flatMap(port => [`127.0.0.1:${port}`, `localhost:${port}`]));
+  const origins = new Set([...hosts].map(host => 'http://' + host));
   app.addHook('onRequest', async (request, reply) => {
     const host = request.headers.host;
-    if (host !== `127.0.0.1:${config.port}` && host !== `localhost:${config.port}`) return reply.code(403).send({ error: '仅允许本机访问' });
+    if (!host || !hosts.has(host)) return reply.code(403).send({ error: '仅允许本机访问' });
     if (request.headers.origin && !origins.has(request.headers.origin)) return reply.code(403).send({ error: '请求来源不允许' });
     if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
       const token = request.headers['x-ledger-token'];
@@ -40,7 +41,7 @@ export async function buildServer(db = openDb()) {
     reply.code(400).send({ error: message.slice(0, 400) });
   });
   const filters = (query: unknown) => z.object({ start: dateSchema.optional(), end: dateSchema.optional(), kind: z.string().optional(), category: z.string().optional(), q: z.string().max(200).optional(), includeCancelled: z.enum(['true', 'false']).optional() }).parse(query);
-  app.get('/api/bootstrap', async () => ({ csrf, version: '0.2.0', today: today() }));
+  app.get('/api/bootstrap', async () => ({ csrf, version: '0.3.0', today: today() }));
   app.get('/api/possessions',async req=>listPossessions(db,today(),z.object({archived:z.enum(['true','false']).optional()}).parse(req.query).archived==='true'));
   app.post('/api/possessions',async req=>savePossession(db,req.body));
   app.put<{Params:{id:string}}>('/api/possessions/:id',async req=>savePossession(db,req.body,z.coerce.number().int().positive().parse(req.params.id)));
@@ -141,7 +142,7 @@ export async function buildServer(db = openDb()) {
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const { app, startBackground } = await buildServer();
-  await app.listen({ host: '127.0.0.1', port: config.port }); startBackground();
+  await app.listen({ host: config.host, port: config.port }); startBackground();
   const stop = async () => { await app.close(); process.exit(0); };
   process.on('SIGTERM', stop); process.on('SIGINT', stop);
 }

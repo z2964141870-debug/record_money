@@ -1,4 +1,4 @@
-# 私人记账助手 v0.2
+# 私人记账助手 v0.3
 
 个人账本：飞书私聊文字/图片、本机网页、真实账本PNG图表、物品使用成本、贷款与借款、资金账户与负债分类、锁定理财、关联退款、日周月账单。账目以人民币整数分保存，统一使用北京时间。
 
@@ -17,6 +17,7 @@
 
 ```sh
 npm ci
+npm run setup
 npm run build
 npm start
 ```
@@ -27,11 +28,11 @@ npm start
 
 ## 配置
 
-首次使用将 `script/config.example.env` 中的字段填写到 `data/config.env`。该文件、实际账本、日志、备份均已被Git忽略，配置文件权限应为600。
+首次使用运行 `npm run setup` 填写存储位置、飞书和模型配置，或手动填写 `script/config.example.env` 中的字段到指定数据目录的 `config.env`。该文件、实际账本、日志、备份均已被Git忽略，配置文件权限为600。安装、Docker部署、升级和源码压缩包见 [DISTRIBUTION.md](DISTRIBUTION.md)。
 
-模型通过 Responses API 调用。模型名称和推理强度可在网页“设置”中修改，下次调用立即生效；服务地址、API Key和飞书凭证在项目 `data/config.env` 中修改，再执行 `npm run service:install` 同步并重启。API Key及App Secret不显示在网页或日志中。
+模型通过 Responses API 调用。模型名称和推理强度可在网页“设置”中修改，下次调用立即生效；服务地址、API Key和飞书凭证在实际数据目录的 `config.env` 中修改，然后重启服务。Mac可再次执行 `npm run service:install`，更新会保留已有配置。API Key及App Secret不显示在网页或日志中。便宜多模态模型的接口要求和验收方法见 [MODELS.md](MODELS.md)。
 
-当前配置使用用户指定的HTTP模型服务。模型请求会发送当前文字、同一会话最近最多20轮用户消息和实际回执、最近最多60笔账目、资金账户、物品及贷款资料供语义理解；读图请求会发送所上传图片。账本和完整对话保存在本机。后续可直接改为HTTPS服务地址。
+模型请求会发送当前文字、同一会话最近最多20轮用户消息和实际回执、最近最多60笔账目、资金账户、物品及贷款资料供语义理解；读图请求会发送所上传图片。账本和完整对话保存在用户指定的位置；请使用自己信任的模型服务。
 
 飞书应用设置见 [FEISHU.md](FEISHU.md)。在飞书私聊机器人发送一条测试消息后，到网页“设置”绑定待确认用户。绑定前的消息只用于识别待绑定用户，不会入账；绑定后仅处理该用户的新消息。
 
@@ -69,7 +70,7 @@ Agent只在用户明确说明付款或收款账户时关联账户；未指定的
 
 ## 图片识别与图表
 
-飞书支持私聊图片消息；网页总览文字框右侧的图片按钮支持PNG/JPEG/WebP，最大8MB。图片解码校验、去除元数据并按比例压缩后，用现有模型的一次Responses图片调用直接提取结构化交易块和文字，保留商户、金额、方向、日期和时间之间的视觉关联，不再把平铺OCR当作账单导入依据。飞书需要额外开通应用身份 `im:resource`（上传资源）及 `im:message:readonly`（下载消息中的图片）；如后台提示有待发布修改，再发布应用版本。当前两项权限均已开通，正式机器人图片发送、下载和识字回执均已实际验证，详见 [VALIDATION.md](VALIDATION.md)。
+飞书支持私聊图片消息；网页总览文字框右侧的图片按钮支持PNG/JPEG/WebP，最大8MB。图片解码校验、去除元数据并按比例压缩后，用现有模型的一次Responses图片调用直接提取结构化交易块和文字，保留商户、金额、方向、日期和时间之间的视觉关联，不再把平铺OCR当作账单导入依据。飞书需要额外开通应用身份 `im:resource`（上传资源）及 `im:message:readonly`（下载消息中的图片）；如后台提示有待发布修改，再发布应用版本。接入步骤见 [FEISHU.md](FEISHU.md)。
 
 发图默认生成带R编号的待核对清单，**不修改账本**。月度汇总、余额、授信、优惠等单独显示或排除，不生成交易；截断的不完整记录不补造。明细合计由程序按整数分计算，截图不完整时不强求与月度汇总相等。缺少年份、具体付款/收款账户、金额或方向时保持未知并询问；不使用当天年份或平台名称推断账户。
 
@@ -147,9 +148,9 @@ npm run service:uninstall
 
 安装后登录自动启动，异常退出重启。运行脚本通过 `caffeinate -s` 在接通电源时阻止自动睡眠，允许锁屏和屏幕熄灭；不修改系统原有电源设置。普通笔记本合盖、主动睡眠、关机、断网或电池模式下不保证在线。
 
-macOS 后台进程无法直接访问 Documents 中的项目，所以安装脚本将构建产物和依赖部署到 `~/Library/Application Support/RecordMoney`，仍使用 `data`、`logs`、`script`、`reports` 四目录。实际账本与备份在该目录的 `data`，日志在 `logs/stdout.log`、`logs/stderr.log`。源码始终保留在项目目录中进行 Git 管理。
+macOS 后台进程访问 Documents 等受保护目录可能受系统权限限制，因此安装脚本将代码和依赖部署到 `~/Library/Application Support/RecordMoney/script`。首次向导推荐将存储位置设为 `~/Library/Application Support/RecordMoney`；也可选择后台进程有权访问的其他位置。账本、配置和备份在指定位置的 `data`，标准输出在指定日志目录的 `stdout.log`、`stderr.log`。源码保留在项目目录进行 Git 管理。
 
-项目 `data/runtime-location.txt` 记录部署位置，手动启动、备份和恢复会使用同一实际账本；测试可通过 `LEDGER_DATA_DIR` 指定隔离目录。再次安装会同步代码、文档和项目配置，保留实际数据库。服务在用户登录期间运行，退出登录后不保证运行。更新代码后先 `npm run build`，再 `npm run service:install`。先停止手动启动的进程，避免端口冲突。
+项目 `data/runtime-location.txt` 记录存储位置，手动启动、备份和恢复会使用同一实际账本；测试可通过 `LEDGER_DATA_DIR` 指定隔离目录。再次安装同步代码和文档，保留已有配置及数据库；配置更新须编辑实际数据目录的 `config.env`。服务在用户登录期间运行，退出登录后不保证运行。更新代码后先 `npm run build`，再 `npm run service:install`。先停止手动启动的进程，避免端口冲突。
 
 飞书断线后自动重连；已经收到的消息和待发送任务会持久保存。离线期间平台是否补投消息不作保证，未见记账回执的消息应核对后补发。重发同一事件按消息ID去重；用户重新发送的不同消息是新请求，不会仅因金额相同而去重。
 
@@ -182,4 +183,4 @@ npx tsx tools/v02-doctor.ts
 
 ## Git
 
-远端：`git@github.com:z2964141870-debug/record_money.git`。开发分支：`codex/feishu-ledger-v0.2`。按功能阶段提交，推送前检查忽略项和敏感数据。SSH身份未配置时本地提交不等于远端已保存，需以验证记录中的实际推送结果为准。
+按功能阶段提交，推送前检查忽略项和敏感数据。压缩包用 `npm run release` 生成，发布方法见 [DISTRIBUTION.md](DISTRIBUTION.md)。

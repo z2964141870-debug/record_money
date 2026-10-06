@@ -1,0 +1,19 @@
+services:
+  ledger:
+    build:
+      context: ..
+      dockerfile: script/Dockerfile
+    image: record-money:0.3.0
+    restart: unless-stopped
+    init: true
+    environment:
+      LEDGER_WEB_PORT: "${LEDGER_WEB_PORT:-4317}"
+    ports:
+      - "127.0.0.1:${LEDGER_WEB_PORT:-4317}:4317"
+    volumes:
+      - "${LEDGER_STORAGE:-../data/docker-storage}:/app/storage"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

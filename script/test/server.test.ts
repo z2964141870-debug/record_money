@@ -8,6 +8,11 @@ test('local web access guards, input validation and shared ledger API', async ()
   const bootstrap = await app.inject({ url: '/api/bootstrap', headers }); assert.equal(bootstrap.statusCode, 200);
   assert.equal((await app.inject({ url: '/api/status', headers: { host: 'evil.test' } })).statusCode, 403);
   assert.equal((await app.inject({ url: '/api/bootstrap', headers: { ...headers, origin: 'https://evil.test' } })).statusCode, 403);
+  const oldPort = config.webPort; config.webPort = 4318;
+  const dockerApp = await buildServer(openDb(':memory:'));
+  assert.equal((await dockerApp.app.inject({url:'/api/bootstrap',headers:{host:'127.0.0.1:4318',origin:'http://127.0.0.1:4318'}})).statusCode,200);
+  assert.equal((await dockerApp.app.inject({url:'/api/bootstrap',headers:{host:'192.168.1.2:4318'}})).statusCode,403);
+  await dockerApp.app.close(); config.webPort = oldPort;
   const value = { kind: 'expense', amount: 2000, date: '2026-10-05', category: '餐饮' };
   assert.equal((await app.inject({ method: 'POST', url: '/api/entries', headers, payload: value })).statusCode, 403);
   const auth = { ...headers, 'x-ledger-token': bootstrap.json().csrf };
