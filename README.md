@@ -16,7 +16,7 @@
 
 不需要Agent或Codex账号。模型需要支持Responses接口和图片输入。每套安装绑定一个平台、一位用户，账本保存在自己的电脑。
 
-Mac支持macOS 14及以上，M系列和Intel分别下载对应版本。首次打开可能需要系统安全确认。合盖、关机后服务会中断，全天在线请用服务器或NAS。
+Mac支持macOS 14及以上，M系列和Intel分别下载对应版本。首次打开可能需要系统安全确认。合盖、关机后服务会可能会中断，可以做一些设置。全天在线请用服务器或NAS。
 
 [使用说明](reports/README.md) · [安装与服务器部署](reports/DISTRIBUTION.md) · [模型配置](reports/MODELS.md)
 
