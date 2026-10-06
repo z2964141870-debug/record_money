@@ -86,7 +86,7 @@ export async function buildServer(db = openDb(), options: { configDir?: string; 
   app.put<{Params:{id:string;installment:string}}>('/api/loans/:id/installments/:installment',async req=>saveInstallment(db,z.coerce.number().int().positive().parse(req.params.id),req.body,z.coerce.number().int().positive().parse(req.params.installment)));
   app.post('/api/charts',async req=>{const chart=createChart(db,req.body);return {url:chart.url,id:chart.id};});
   app.post<{Params:{id:string}}>('/api/charts/:id/send',async req=>{
-    const id=z.uuid().parse(req.params.id),owner=setting(db,'owner');if(!owner)throw new Error('请先绑定飞书用户');
+    const id=z.uuid().parse(req.params.id),owner=setting(db,'owner');if(!owner)throw new Error('请先绑定机器人用户');
     const chart=db.prepare('SELECT path FROM chart_files WHERE id=?').get(id) as {path:string}|undefined;if(!chart)throw new Error('图表不存在');
     db.prepare('INSERT OR IGNORE INTO outbox(user_id,text,dedup,image_path,created_at) VALUES(?,?,?,?,?)').run(owner,'','chart-web:'+id,chart.path,new Date().toISOString());return {ok:true};
   });
@@ -119,7 +119,7 @@ export async function buildServer(db = openDb(), options: { configDir?: string; 
   app.post('/api/bind', async req => {
     const { user } = z.object({ user: z.string().min(1).max(100) }).parse(req.body);
     if (setting(db, 'owner') && user !== setting(db, 'owner')) throw new Error('v0.1不支持切换账本所有者');
-    if (user !== setting(db, 'pending_user')) throw new Error('请先从飞书私聊机器人发送一条消息');
+    if (user !== setting(db, 'pending_user')) throw new Error('请先私聊机器人发送一条消息');
     setSetting(db, 'owner', user); setSetting(db, 'schedule_start', today());
     queueReply(db, user, '个人账本已绑定，可以开始记账。', 'bound:' + user); return { ok: true };
   });

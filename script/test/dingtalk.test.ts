@@ -9,6 +9,23 @@ import { saveSetupConfig } from '../src/config-files.js';
 import dotenv from 'dotenv';
 import { openDb, setting, setSetting } from '../src/db.js';
 import { acceptDingMessage } from '../src/bot.js';
+import { applyActions, receiveMessage } from '../src/assistant.js';
+import { getEntry } from '../src/ledger.js';
+test('entries and linked refunds retain the incoming chat channel', () => {
+  for (const [user, source] of [['local', 'web-chat'], ['feishu-owner', 'feishu'], ['dingtalk:staff1', 'dingtalk']]) {
+    const db = openDb(':memory:');
+    try {
+      receiveMessage(db, 'purchase', user, '奶茶20');
+      applyActions(db, 'purchase', [{ type: 'add', kind: 'expense', amount: '20.00', category: '餐饮' }]);
+      receiveMessage(db, 'refund', user, '退回5元');
+      applyActions(db, 'refund', [{ type: 'refund', id: 1, amount: '5.00' }]);
+      assert.equal(getEntry(db, 1).source, source);
+      assert.equal(getEntry(db, 2).source, source);
+      assert.equal(getEntry(db, 2).parent_id, 1);
+      assert.equal(getEntry(db, 2).amount, 500);
+    } finally { db.close(); }
+  }
+});
 test('DingTalk accepts only private supported messages, preserves time and namespacing and rejects malformed fields', () => {
   const base = { conversationType: '1', senderStaffId: 'staff1', msgId: 'message1', createAt: 1791244800000, msgtype: 'text', text: { content: '奶茶20' } };
   assert.deepEqual(decodeDingMessage(base), { id: 'dingtalk:message1', user: 'dingtalk:staff1', text: '奶茶20', imageKey: undefined, time: new Date(base.createAt).toISOString() });

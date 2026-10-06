@@ -116,12 +116,13 @@ function applyLedgerAction(db: DB, action: Exclude<Action,DomainAction|{type:'re
     return `${start} 至 ${end}\n收入 ${money(income)} 元 · 净支出 ${money(net)} 元\n${entries.slice(0, 12).map(e => `#${e.id} ${e.date} ${e.merchant || e.note || e.category} ${e.kind === 'income' ? '收入' : e.kind === 'refund' ? '退款' : e.kind === 'transfer' ? '转账' : '支出'} ${money(e.amount)} 元`).join('\n') || '暂无记录'}${entries.length > 12 ? `\n共 ${entries.length} 笔，完整明细可在本机网页查看。` : ''}`;
   }
   const date = action.date || today(message.received_at ? new Date(message.received_at) : undefined);
+  const source = message.user_id === 'local' ? 'web-chat' : message.user_id.startsWith('dingtalk:') ? 'dingtalk' : 'feishu';
   if (action.type === 'add') {
     if (!action.kind || !action.amount) throw new Error('请补充金额和收支方向');
     const account = action.account ? findAccount(db, action.account) : null;
     const target = action.to_account ? findAccount(db, action.to_account) : null;
     if (action.kind === 'transfer' && (!account || !target)) throw new Error('转账或还款请提供转出和转入账户');
-    const e = createEntry(db, { kind: action.kind, amount: cents(action.amount), date, category: action.category || '待分类', subcategory: action.subcategory || '', merchant: action.merchant || '', note: action.note || '', parent_id: null, account_id: account?.id ?? null, to_account_id: target?.id ?? null }, message.user_id === 'local' ? 'web-chat' : 'feishu', message.id);
+    const e = createEntry(db, { kind: action.kind, amount: cents(action.amount), date, category: action.category || '待分类', subcategory: action.subcategory || '', merchant: action.merchant || '', note: action.note || '', parent_id: null, account_id: account?.id ?? null, to_account_id: target?.id ?? null }, source, message.id);
     return `已记${e.kind === 'income' ? '收入' : e.kind === 'transfer' ? '转账' : '支出'} ${money(e.amount)} 元 · ${e.category}${e.subcategory ? ' / ' + e.subcategory : ''}${account ? ' · ' + account.name : ''}${target ? ' → ' + target.name : ''} · #${e.id}`;
   }
   const rows = permitId ? [getEntry(db, permitId)] : candidates(db, action, message.reply_to);
@@ -133,7 +134,7 @@ function applyLedgerAction(db: DB, action: Exclude<Action,DomainAction|{type:'re
   const entry = rows[0];
   if (action.type === 'cancel') { cancelEntry(db, entry.id); return `已撤销 #${entry.id}，历史记录已保留。`; }
   if (action.type === 'refund') {
-    const e = createEntry(db, { kind: 'refund', amount: cents(action.amount || '0'), date, category: entry.category, subcategory: entry.subcategory, merchant: entry.merchant, note: action.note || '退款到账', parent_id: entry.id, account_id: action.account ? findAccount(db, action.account).id : entry.account_id }, message.user_id === 'local' ? 'web-chat' : 'feishu', message.id);
+    const e = createEntry(db, { kind: 'refund', amount: cents(action.amount || '0'), date, category: entry.category, subcategory: entry.subcategory, merchant: entry.merchant, note: action.note || '退款到账', parent_id: entry.id, account_id: action.account ? findAccount(db, action.account).id : entry.account_id }, source, message.id);
     return `已记退款 ${money(e.amount)} 元 · #${e.id} → 原支出 #${entry.id}\n原交易净支出 ${money(entry.amount - refunded(db, entry.id))} 元`;
   }
   const updated = updateEntry(db, entry.id, { ...entry, ...(action.account ? { account_id: findAccount(db, action.account).id } : {}), ...(action.to_account ? { to_account_id: findAccount(db, action.to_account).id } : {}), ...(action.amount ? { amount: cents(action.amount) } : {}), ...(action.date ? { date: action.date } : {}), ...(action.category ? { category: action.category } : {}), ...(action.subcategory !== undefined ? { subcategory: action.subcategory } : {}), ...(action.merchant !== undefined ? { merchant: action.merchant } : {}), ...(action.note !== undefined ? { note: action.note } : {}) });
