@@ -70,4 +70,5 @@ try {
   finally{db.close();}
   writeFileSync(join(directory,'result.json'),JSON.stringify({model:config.model,apiType:config.apiType,reasoning:config.reasoning,checked_at:new Date().toISOString(),passed:results.filter(r=>r.passed).length,total:results.length,results},null,2)+'\n',{mode:0o600});
   console.log(JSON.stringify({passed:results.filter(r=>r.passed).length,total:results.length,report:join(directory,'result.json')}));
+  if(results.some(r=>!r.passed))process.exitCode=1;
 }finally{globalThis.fetch=actualFetch;}

@@ -80,6 +80,17 @@ test('failed batch rolls back ledger, balances, audit and message completion',()
     assert.equal((db.prepare("SELECT status FROM messages WHERE id='batch'").get() as {status:string}).status,'pending');
   }finally{db.close();}
 });
+test('fixed command storage failures remain retryable and do not become completed validation replies',async()=>{
+  const db=openDb(':memory:'),old={...config};
+  try {
+    config.aiMode='fixed';
+    db.exec("CREATE TRIGGER fail_write BEFORE INSERT ON entries BEGIN SELECT RAISE(ABORT, 'fixture storage failure'); END");
+    receiveMessage(db,'storage','local','支出 20 餐饮 奶茶');
+    await assert.rejects(processMessage(db,'storage'),/fixture storage failure/);
+    assert.equal((db.prepare("SELECT status FROM messages WHERE id='storage'").get() as {status:string}).status,'pending');
+    assert.equal(listEntries(db).length,0);
+  }finally{Object.assign(config,old);db.close();}
+});
 test('model cannot invent an original ID or choose the latest expense for an ambiguous refund',()=>{
   assert.equal(validateReferences('早上奶茶退了5元',[{type:'refund',id:1,amount:'5'}])[0].type,'clarify');
   assert.equal(validateReferences('早上奶茶退了5元',[{type:'refund',match:'上一笔',amount:'5'}])[0].type,'clarify');
@@ -108,7 +119,8 @@ test('capabilities are tied to service; switching modes keeps conversations, led
     saveCapabilities(db,current,{text:'verified',structured:'verified',vision:'unsupported'});
     saveCapabilities(db,{...current,model:'unsaved-fixture'},{text:'verified',structured:'verified',vision:'unverified'});
     assert.equal(modelCapabilities(db,current).vision,'unsupported');
-    saveModelService(db,current,dir,{model:current.model,reasoning:current.reasoning,aiMode:'fixed'});assert.equal(snapshot(),before);assert.equal(modelCapabilities(db,current).vision,'unsupported');
+    saveModelService(db,current,dir,{aiMode:'fixed'});assert.equal(snapshot(),before);assert.equal(modelCapabilities(db,current).vision,'unsupported');
+    assert.equal(current.model,runtime.model);assert.equal(current.reasoning,runtime.reasoning);
     saveModelService(db,current,dir,{model:'text-fixture',reasoning:'none',aiMode:'ai',apiType:'chat_completions'});assert.equal(snapshot(),before);assert.equal(modelCapabilities(db,current).vision,'unverified');
     const stored=dotenv.parse(readFileSync(join(dir,'config.env')));assert.equal(stored.AI_API_TYPE,'chat_completions');assert.equal(stored.AI_API_KEY,'fixture');
     assert.equal(setting(db,'model'),'text-fixture');

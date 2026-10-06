@@ -5,7 +5,7 @@ import { saveConfigFields, setupSchema, validateModelConfig } from './config-fil
 
 export type ModelRuntime = { aiBaseUrl: string; aiKey: string; model: string; reasoning: string; port: number; aiMode?: 'fixed'|'ai'; apiType?: 'responses'|'chat_completions';chatThinking?:'reasoning_effort'|'enable_thinking' };
 const inputSchema = z.object({
-  model: setupSchema.shape.model, reasoning: setupSchema.shape.reasoning,
+  model: setupSchema.shape.model.removeDefault().optional(), reasoning: setupSchema.shape.reasoning.removeDefault().optional(),
   aiMode: setupSchema.shape.aiMode.removeDefault().optional(), apiType: setupSchema.shape.apiType.removeDefault().optional(),
   chatThinking:setupSchema.shape.chatThinking.removeDefault().optional(),
   baseUrl: setupSchema.shape.aiBaseUrl.removeDefault().optional(),
@@ -14,7 +14,7 @@ const inputSchema = z.object({
 export function resolveModelService(runtime: ModelRuntime, raw: unknown) {
   const input = inputSchema.parse(raw);
   const next = { aiBaseUrl: (input.baseUrl ?? runtime.aiBaseUrl).replace(/\/$/, ''),
-    aiKey: input.apiKey || runtime.aiKey, model: input.model, reasoning: input.reasoning, port: runtime.port,
+    aiKey: input.apiKey || runtime.aiKey, model: input.model ?? runtime.model, reasoning: input.reasoning ?? runtime.reasoning, port: runtime.port,
     aiMode: input.aiMode ?? runtime.aiMode ?? 'ai', apiType: input.apiType ?? runtime.apiType ?? 'responses',chatThinking:input.chatThinking??runtime.chatThinking??'reasoning_effort' };
   validateModelConfig(next);
   // Retain compatibility with the existing model-only settings endpoint.
