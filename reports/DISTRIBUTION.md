@@ -46,7 +46,7 @@ npm start
 docker compose up -d
 ```
 
-首次运行自动下载ghcr.io/z2964141870-debug/record_money:0.4.0，无需构建或终端配置向导。打开http://127.0.0.1:4317完成网页配置。默认持久目录是compose文件旁的data/docker-storage，其中data保存账本和配置、logs供记录使用。启动入口以root仅准备挂载目录，再以node用户（UID 1000）运行服务；不递归修改原有文件权限。复用旧目录时，原有账本和配置仍须允许UID 1000读写。
+首次运行自动下载ghcr.io/z2964141870-debug/record_money:0.4.0，无需构建或终端配置向导。打开 <http://127.0.0.1:4317> 完成网页配置。默认持久目录是compose文件旁的data/docker-storage，其中data保存账本和配置、logs供记录使用。启动入口以root仅准备挂载目录，再以node用户（UID 1000）运行服务；不递归修改原有文件权限。复用旧目录时，原有账本和配置仍须允许UID 1000读写。
 
 更换目录或端口时，在执行所有Compose命令的同一个终端设置：
 

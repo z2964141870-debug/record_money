@@ -3,13 +3,24 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: 'Optional completed build run ID to publish without rebuilding'
+        required: false
+        type: string
+      release_tag:
+        description: 'Existing version tag (required when reusing a build run)'
+        required: false
+        type: string
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 jobs:
   source:
+    if: inputs.source_run_id == ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -77,19 +88,47 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
   publish:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: >-
+      always() &&
+      ((startsWith(github.ref, 'refs/tags/v') && needs.source.result == 'success' && needs.mac.result == 'success' && needs.docker.result == 'success') ||
+       (github.event_name == 'workflow_dispatch' && inputs.source_run_id != '' && inputs.release_tag != ''))
     needs: [source, mac, docker]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: read
     steps:
+      - id: target
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILD_RUN: ${{ inputs.source_run_id }}
+          TARGET_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          if ! [[ "$TARGET_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo 'Expected an existing vMAJOR.MINOR.PATCH tag'
+            exit 1
+          fi
+          if [ -n "$BUILD_RUN" ]; then
+            if ! [[ "$BUILD_RUN" =~ ^[0-9]+$ ]]; then exit 1; fi
+            BUILD_REF=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN" --jq .head_branch)
+            if [ "$BUILD_REF" != "$TARGET_TAG" ]; then
+              echo 'Build run must belong to the requested version tag'
+              exit 1
+            fi
+          fi
+          echo "tag=$TARGET_TAG" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.target.outputs.tag }}
       - uses: actions/download-artifact@v4
         with:
+          pattern: '{source,mac-*}'
           path: artifacts
           merge-multiple: true
+          run-id: ${{ inputs.source_run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
       - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ steps.target.outputs.tag }}
         run: |
           gh release create "$RELEASE_TAG" artifacts/* --verify-tag --title "私人记账助手 $RELEASE_TAG" --notes-file reports/RELEASE.md

@@ -15,7 +15,7 @@
 在[GitHub Releases](https://github.com/z2964141870-debug/record_money/releases/latest)下载对应安装包。
 
 - Mac（macOS 14+）：M系列下载macos-arm64.zip，Intel下载macos-x64.zip。解压后将应用放进“应用程序”，双击打开，在网页选择聊天渠道并填写凭证，点击“连接并保存”。内置运行环境，自动安装登录启动的后台服务。当前未经Apple公证，首次运行可能需系统安全确认。
-- Linux/NAS：下载compose.yaml，在所在目录执行docker compose up -d。镜像自动下载，打开http://127.0.0.1:4317完成同一网页配置。需要Docker Compose，无需Node或自行构建；远程访问用SSH转发。
+- Linux/NAS：下载compose.yaml，在所在目录执行docker compose up -d。镜像自动下载，打开 <http://127.0.0.1:4317> 完成同一网页配置。需要Docker Compose，无需Node或自行构建；远程访问用SSH转发。
 
 不需要Agent或Codex账号。飞书/钉钉创建应用、权限及发布由平台要求，配置后网页会展示必要步骤并引导绑定本人。每个实例只绑定一个渠道和一位用户，已有实例不通过首次配置切换渠道。
 
