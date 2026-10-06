@@ -16,4 +16,4 @@
 
 ## 验证范围
 
-自动测试、Mac独立安装、Linux容器、Windows原生安装包验收及现有模型关闭思考后的标准样例通过。Qwen候选尚无凭证，未实测；新版无模型的真实飞书/钉钉入站仍待人工验收，接口模拟已覆盖。Windows首次安全提示、快捷方式、自启和文件夹对话框尚未人工验收。[完整记录](https://github.com/z2964141870-debug/record_money/blob/v0.6.0/reports/VALIDATION.md)
+自动测试、Mac独立安装、Linux容器、Windows原生安装包验收及现有模型关闭思考后的标准样例通过。Qwen候选尚无凭证，未实测；新版无模型的真实飞书/钉钉入站仍待人工验收，接口模拟已覆盖。Windows首次安全提示、快捷方式、自启和文件夹对话框尚未人工验收。[完整记录](https://github.com/z2964141870-debug/record_money/blob/codex/feishu-ledger-v0.1/reports/VALIDATION.md)
