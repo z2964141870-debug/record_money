@@ -39,7 +39,9 @@ export function createDingTalkTransport(credentials: { appId: string; appSecret:
       const result = await api('robot/messageFiles/download', { robotCode: credentials.appId, downloadCode });
       if (typeof result.downloadUrl !== 'string') throw new Error('钉钉图片下载地址不可用，请检查机器人文件下载权限');
       const url = new URL(result.downloadUrl);
-      if (url.protocol !== 'https:' || !['dingtalk.com', 'dingding.cn', 'aliyuncs.com', 'alicdn.com'].some(d => url.hostname === d || url.hostname.endsWith('.' + d))) throw new Error('钉钉图片下载地址不受支持');
+      // DingTalk can return an HTTP OSS URL; keep the signed path/query and use TLS.
+      if (url.protocol === 'http:' && url.hostname.endsWith('.aliyuncs.com')) url.protocol = 'https:';
+      if (url.protocol !== 'https:' || url.username || url.password || !['dingtalk.com', 'dingding.cn', 'aliyuncs.com', 'alicdn.com'].some(d => url.hostname === d || url.hostname.endsWith('.' + d))) throw new Error('钉钉图片下载地址不受支持');
       const r = await request(url, { signal: AbortSignal.timeout(30000), redirect: 'error' });
       if (!r.ok) throw new DingTalkApiError(r.status);
       if (!r.body) throw new Error('钉钉图片下载失败');

@@ -1,35 +1,23 @@
 # 私人记账助手
 
-选择飞书或钉钉，通过私聊文字与账单图片管理个人账本，在网页查看资金账户、长期贷款、物品成本和真实账目图表。金额由程序按整数分计算；图片先核对，确认后入账。钉钉已实测文字、连续对话、主动提醒与三种图表发送，收图仍待验收；详见[钉钉接入](reports/DINGTALK.md)。
+在飞书或钉钉发一句话，就能记账。
 
-每个用户独立部署，数据保存在自己指定的位置。支持兼容Responses API、JSON对象输出及图片输入的模型，模型品牌和价格不限。
+- `奶茶20` → 支出20元，餐饮/饮料。
+- `妈妈红包30` → 收入30元。
+- `刚才那杯其实18` → 修改上一笔。
 
-- [安装、配置与Docker部署](reports/DISTRIBUTION.md)
-- [使用说明](reports/README.md)
-- [飞书应用配置](reports/FEISHU.md)
-- [钉钉应用配置](reports/DINGTALK.md)
-- [模型选择与验收](reports/MODELS.md)
+支持账单图片识别、退款、资金账户、贷款、物品清单、账单图表和每天20:00催记账。图片先核对，确认后入账。
 
-## 下载后使用
+## 开始用
 
-在[GitHub Releases](https://github.com/z2964141870-debug/record_money/releases/latest)下载对应安装包。
+1. **[下载安装包](https://github.com/z2964141870-debug/record_money/releases/latest)**：Mac解压后打开应用；Linux/NAS下载 `compose.yaml`，执行 `docker compose up -d`。
+2. **创建一个机器人**：按 [飞书教程](reports/FEISHU.md) 或 [钉钉教程](reports/DINGTALK.md) 创建应用、开权限并发布。
+3. **填写配置**：打开记账助手，选择平台，填写应用ID、Secret、模型服务地址、API Key和模型名。私聊机器人后，在网页绑定自己。
 
-- Mac（macOS 14+）：M系列下载macos-arm64.zip，Intel下载macos-x64.zip。解压后将应用放进“应用程序”，双击打开，在网页选择聊天渠道并填写凭证，点击“连接并保存”。内置运行环境，自动安装登录启动的后台服务。当前未经Apple公证，首次运行可能需系统安全确认。
-- Linux/NAS：下载compose.yaml，在所在目录执行docker compose up -d。镜像自动下载，打开 <http://127.0.0.1:4317> 完成同一网页配置。需要Docker Compose，无需Node或自行构建；远程访问用SSH转发。
+不需要Agent或Codex账号。模型需要支持Responses接口和图片输入。每套安装绑定一个平台、一位用户，账本保存在自己的电脑。
 
-不需要Agent或Codex账号。飞书/钉钉创建应用、权限及发布由平台要求，配置后网页会展示必要步骤并引导绑定本人。每个实例只绑定一个渠道和一位用户，已有实例不通过首次配置切换渠道。
+Mac支持macOS 14及以上，M系列和Intel分别下载对应版本。首次打开可能需要系统安全确认。合盖、关机后服务会中断，全天在线请用服务器或NAS。
 
-## 源码开发
+[使用说明](reports/README.md) · [安装与服务器部署](reports/DISTRIBUTION.md) · [模型配置](reports/MODELS.md)
 
-要求Node.js 24+，本机运行：
-
-```sh
-cd script
-npm ci
-npm run build
-npm start
-```
-
-网页默认地址：http://127.0.0.1:4317 。Mac合盖或关机会中断服务，需要全天运行时部署到服务器或NAS。
-
-MIT许可证。源码包只含源代码与文档；Mac安装包内含运行环境和生产依赖。所有发布包均不含维护者凭证、账本、聊天、图片或日志。详细依赖许可证见各依赖包；Docker中文字体由Noto提供。
+开源协议：MIT。代码在 `script`，说明在 `reports`；本机数据在 `data`，日志在 `logs`，均不随安装包发布。

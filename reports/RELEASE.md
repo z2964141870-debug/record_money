@@ -1,23 +1,26 @@
-# 私人记账助手 v0.4.0
+# v0.4.1
 
-首次配置在浏览器一次填写：选择飞书或钉钉、填写应用与模型凭证，自动检查连接并保存。无需Agent或Codex账号。模型服务需支持Responses、JSON对象输出和图片输入。
+飞书或钉钉聊天记账，支持读图、退款、资金账户、贷款、物品清单、三种账单图表和定时提醒。
 
-## Mac
+## 安装
 
-Apple Silicon（M系列）下载macos-arm64.zip，Intel Mac下载macos-x64.zip。解压后将“私人记账助手.app”放进应用程序，双击启动；内置Node和依赖，无需终端、npm或编译。默认安装后台服务，登录后自动运行，关闭网页不影响记账。
+- **Mac M系列**：下载 `record-money-v0.4.1-macos-arm64.zip`。
+- **Intel Mac**：下载 `record-money-v0.4.1-macos-x64.zip`。
+- **Linux/NAS**：下载 `compose.yaml`，执行 `docker compose up -d`。
 
-支持macOS 14及以上。当前安装包只有本地签名，尚未通过Apple公证；首次运行可能需要在系统设置“隐私与安全性”确认打开。不会通过脚本关闭系统安全保护。Mac合盖或关机后服务不能继续，全天运行请使用Linux/NAS。
+Mac解压后打开“私人记账助手.app”，无需安装Node或使用终端。支持macOS 14+，尚未Apple公证，首次打开可能需要系统安全确认。Linux安装步骤见 [部署说明](https://github.com/z2964141870-debug/record_money/blob/codex/feishu-ledger-v0.1/reports/DISTRIBUTION.md)。
 
-## Linux / NAS
+## 创建机器人
 
-安装Docker后下载compose.yaml，在所在目录执行docker compose up -d。镜像自动下载，首次启动自动准备存储目录，无需自行构建。打开 <http://127.0.0.1:4317> 完成配置。默认数据保存在compose文件旁的data/docker-storage。
+选择一个平台，照着教程创建应用、开通权限、发布，再把凭证填进记账助手。
 
-预构建镜像：ghcr.io/z2964141870-debug/record_money:0.4.0，支持linux/amd64与linux/arm64。远程主机通过SSH转发访问，仅向本机暴露管理网页。
+- **[飞书机器人教程](https://github.com/z2964141870-debug/record_money/blob/codex/feishu-ledger-v0.1/reports/FEISHU.md)**：自建应用、机器人能力、消息与图片权限、长连接事件。
+- **[钉钉机器人教程](https://github.com/z2964141870-debug/record_money/blob/codex/feishu-ledger-v0.1/reports/DINGTALK.md)**：企业内部应用、Stream模式、发送与图片权限。
 
-## 渠道与数据
+下方附件 `FEISHU.md`、`DINGTALK.md` 也可单独下载。
 
-飞书已在开发者实际账号验收。钉钉使用官方Stream SDK，支持单聊文字/图片、发送回执、提醒和图表；本版完成模拟接口验收，尚无实际钉钉应用联调，不保证租户权限与API额度均可用。两个渠道供独立部署时选择，暂不支持一个实例同时绑定两套账号，也不自动合并跨渠道对话。
+再填模型服务地址、API Key和模型名。模型需支持Responses和图片输入，不需要Agent或Codex账号。私聊机器人发送“绑定账本”，在网页确认绑定后开始记账。
 
-飞书/钉钉创建应用、开通消息及图片权限、发布版本由平台要求，网页提供接入步骤。首次私聊后核对用户并绑定。图片交易必须核对并确认才入账。
+`record-money-v0.4.1.zip` 是开发用源码包；`.sha256` 是校验文件。账本和密钥保存在本机，Mac合盖或关机会中断服务。
 
-从已有Mac服务升级会先备份，保留配置、账本与聊天；不会把分发测试记录写进实际账本。压缩包不含维护者密钥、账本或聊天。文件名后缀.sha256用于校验。
+本版修复钉钉图片下载和账目来源标记，并补齐机器人创建教程。[版本记录](https://github.com/z2964141870-debug/record_money/blob/codex/feishu-ledger-v0.1/reports/CHANGELOG.md)。

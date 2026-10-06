@@ -86,6 +86,21 @@ test('DingTalk image permissions stop automatic retries, temporary failures retr
   });
   await assert.rejects(t.download('code'), e => e instanceof DingTalkImageError && !e.retryable);
 });
+test('DingTalk OSS image URLs use HTTPS without changing the signed path and query', async () => {
+  const signed = 'http://wukong-file-im-zjk.oss-cn-zhangjiakou.aliyuncs.com/image.png?Signature=test%2Bsignature&Expires=123';
+  const t = createDingTalkTransport({ appId: 'dingtest', appSecret: 'test-secret' }, async (url, init) => {
+    if (String(url).endsWith('accessToken')) return new Response(JSON.stringify({ accessToken: 'token' }));
+    if (String(url).includes('messageFiles/download')) return new Response(JSON.stringify({ downloadUrl: signed }));
+    assert.equal(String(url), signed.replace('http:', 'https:'));
+    assert.equal(init?.redirect, 'error');
+    return new Response(Buffer.from('test-image'));
+  });
+  assert.equal((await t.download('code')).toString(), 'test-image');
+  for (const downloadUrl of ['http://private.example/image.png', 'http://image.dingtalk.com/image.png', 'https://user:password@image.dingtalk.com/image.png']) {
+    const blocked = createDingTalkTransport({ appId: 'dingtest', appSecret: 'test-secret' }, async url => new Response(JSON.stringify(String(url).endsWith('accessToken') ? { accessToken: 'token' } : { downloadUrl })));
+    await assert.rejects(blocked.download('code'), e => e instanceof DingTalkImageError && !e.retryable);
+  }
+});
 test('DingTalk discovery never books the first message, accepts only the bound owner and deduplicates image delivery', () => {
   const db = openDb(':memory:');
   try {
