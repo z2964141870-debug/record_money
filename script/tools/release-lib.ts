@@ -4,10 +4,10 @@ import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 
-const allowed = ['README.md', 'LICENSE', '.gitignore', '.dockerignore',
-  'reports/README.md', 'reports/FEISHU.md', 'reports/DISTRIBUTION.md', 'reports/MODELS.md', 'reports/CHANGELOG.md',
+const allowed = ['README.md', 'LICENSE', '.gitignore', '.dockerignore', '.github/workflows/release.yml',
+  'reports/README.md', 'reports/FEISHU.md', 'reports/DINGTALK.md', 'reports/RELEASE.md', 'reports/DISTRIBUTION.md', 'reports/MODELS.md', 'reports/CHANGELOG.md',
   'script/package.json', 'script/package-lock.json', 'script/config.example.env', 'script/tsconfig.json', 'script/tsconfig.server.json',
-  'script/vite.config.ts', 'script/Dockerfile', 'script/compose.yaml', 'script/src', 'script/web', 'script/test', 'script/tools'];
+  'script/vite.config.ts', 'script/Dockerfile', 'script/compose.yaml', 'script/desktop', 'script/src', 'script/web', 'script/test', 'script/tools'];
 export function packageFiles(root: string) {
   const files: string[] = [];
   function walk(path: string) {
@@ -16,7 +16,7 @@ export function packageFiles(root: string) {
     if (stat.isDirectory()) for (const child of readdirSync(full).sort()) walk(join(path, child));
     else {
       if (/\.env$|\.sqlite(?:-[a-z]+)?$|\.log$|\.pem$|\.key$/.test(path) && path !== 'script/config.example.env') throw new Error('拒绝发布私密或运行文件：' + path);
-      if (path.startsWith('script/') && !/\.(ts|tsx|css|html|json|sh)$/.test(path) && !['script/config.example.env', 'script/Dockerfile', 'script/compose.yaml'].includes(path)) throw new Error('非源文件，拒绝发布：' + path);
+      if (path.startsWith('script/') && !/\.(ts|tsx|css|html|json|sh|swift)$/.test(path) && !['script/config.example.env', 'script/Dockerfile', 'script/compose.yaml'].includes(path)) throw new Error('非源文件，拒绝发布：' + path);
       const text = readFileSync(full, 'utf8');
       if (/\bsk-[A-Za-z0-9_-]{20,}/.test(text) || /-----BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY-----/.test(text)) throw new Error('疑似密钥，拒绝发布：' + path);
       files.push(path);

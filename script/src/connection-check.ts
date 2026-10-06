@@ -3,22 +3,23 @@ import { createCanvas } from '@napi-rs/canvas';
 import { z } from 'zod';
 import { setupSchema } from './config-files.js';
 
-export type CheckResult = { service: 'feishu' | 'text' | 'vision'; ok: boolean; detail: string };
+export type CheckResult = { service: 'feishu' | 'dingtalk' | 'text' | 'vision'; ok: boolean; detail: string };
 type Options = { fetch?: typeof fetch; vision?: boolean; feishu?: boolean };
 const payment = z.object({ amount: z.literal('20.00'), kind: z.literal('expense') });
 export async function checkConnections(raw: unknown, options: Options = {}): Promise<CheckResult[]> {
   const c = setupSchema.omit({ appId: true, appSecret: true }).parse(raw), request = options.fetch || fetch;
   const results: CheckResult[] = [];
+  const channel = c.channel;
   if (options.feishu !== false) try {
     const credentials = setupSchema.parse(raw);
-    const response = await request('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
+    const response = await request(channel === 'dingtalk' ? 'https://api.dingtalk.com/v1.0/oauth2/accessToken' : 'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ app_id: credentials.appId, app_secret: credentials.appSecret }), signal: AbortSignal.timeout(15000),
+      body: JSON.stringify(channel === 'dingtalk' ? { appKey: credentials.appId, appSecret: credentials.appSecret } : { app_id: credentials.appId, app_secret: credentials.appSecret }), signal: AbortSignal.timeout(15000),
     });
-    const value = await response.json() as { code?: number; tenant_access_token?: string };
-    const ok = response.ok && value.code === 0 && !!value.tenant_access_token;
-    results.push({ service: 'feishu', ok, detail: ok ? '凭证有效；仍需启用机器人、配置事件权限并发布' : `凭证验证失败（HTTP ${response.status}），请核对App ID与App Secret` });
-  } catch { results.push({ service: 'feishu', ok: false, detail: '无法验证飞书凭证，请检查网络与配置' }); }
+    const value = await response.json() as { code?: number; tenant_access_token?: string; accessToken?: string };
+    const ok = response.ok && (channel === 'dingtalk' ? !!value.accessToken : value.code === 0 && !!value.tenant_access_token);
+    results.push({ service: channel, ok, detail: ok ? '凭证有效；仍需启用机器人、配置消息权限并发布' : `凭证验证失败（HTTP ${response.status}），请核对应用ID与Secret` });
+  } catch { results.push({ service: channel, ok: false, detail: '无法验证应用凭证，请检查网络与配置' }); }
   const client = new OpenAI({ apiKey: c.aiKey, baseURL: c.aiBaseUrl, timeout: 45000, maxRetries: 0, fetch: request });
   for (const service of options.vision === false ? ['text'] as const : ['text', 'vision'] as const) {
     try {

@@ -1,6 +1,6 @@
 {
   "name": "record-money",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -10,10 +10,11 @@
   "scripts": {
     "dev": "tsx src/server.ts",
     "build": "tsc --noEmit && tsc -p tsconfig.server.json && vite build",
-    "start": "node build/server.js",
+    "start": "node build/start.js",
     "setup": "tsx tools/setup.ts",
     "connections": "tsx tools/connections.ts",
     "release": "tsx tools/release.ts",
+    "package:mac": "tsx tools/package-mac.ts",
     "test": "tsx --test test/*.test.ts",
     "check": "tsc --noEmit",
     "service:install": "tsx tools/service.ts install",
@@ -27,6 +28,7 @@
     "@larksuiteoapi/node-sdk": "1.74.0",
     "@napi-rs/canvas": "^1.0.10",
     "better-sqlite3": "13.0.3",
+    "dingtalk-stream": "2.1.6-beta.1",
     "dotenv": "^17.2.0",
     "fastify": "^5.6.0",
     "lucide-react": "^0.468.0",

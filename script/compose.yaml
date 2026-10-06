@@ -1,9 +1,6 @@
 services:
   ledger:
-    build:
-      context: ..
-      dockerfile: script/Dockerfile
-    image: record-money:0.3.1
+    image: ghcr.io/z2964141870-debug/record_money:0.4.0
     restart: unless-stopped
     init: true
     environment:
@@ -11,7 +8,7 @@ services:
     ports:
       - "127.0.0.1:${LEDGER_WEB_PORT:-4317}:4317"
     volumes:
-      - "${LEDGER_STORAGE:-../data/docker-storage}:/app/storage"
+      - "${LEDGER_STORAGE:-./data/docker-storage}:/app/storage"
     logging:
       driver: json-file
       options:

@@ -1,6 +1,18 @@
-# v0.3 安装与分发
+# v0.4 安装与分发
 
-每次部署只绑定一位用户，各自使用自己的飞书应用、模型服务和账本。支持macOS和Linux；Windows可使用Docker Desktop。源码按MIT许可证开放，压缩包是源码安装包，不是免安装的独立可执行程序。
+每次部署只绑定一个聊天渠道和一位用户，各自使用自己的飞书或钉钉应用、模型服务和账本。优先支持macOS和Linux，Windows原生安装暂缓。源码按MIT许可证开放。
+
+## 普通Mac用户
+
+在GitHub Releases下载对应CPU的Mac安装包：Apple Silicon/M系列选择macos-arm64.zip，Intel选择macos-x64.zip。支持macOS 14及以上。
+
+1. 解压，将“私人记账助手.app”拖到应用程序，双击打开。
+2. 浏览器自动打开首次配置页，选择飞书或钉钉，填写应用ID/Secret、模型Base URL/API Key/多模态模型名称，点击“连接并保存”。默认存储位置和推理强度已填好；需要自选存储目录时展开高级设置，点击文件夹图标。
+3. 按网页提示完成聊天平台的机器人能力、权限、事件和发布，首次私聊后核对待绑定用户并点击绑定。
+
+应用内置Node与生产依赖，无需安装Node、npm或编译器。自动安装本人登录启动的后台服务，关闭网页仍继续运行。默认存储目录~/Library/Application Support/RecordMoney。后台运行代码位于该目录desktop/版本，不修改应用程序包；新版本第一次打开会备份已有账本，更新启动项并保留配置、数据及历史。服务启动失败时恢复原启动项。
+
+当前包只有本地签名，未经Apple公证。下载后首次打开可能需要在系统设置“隐私与安全性”允许打开。正式Developer ID签名与公证需要维护者的Apple开发者账号，尚未配置；不会禁用Gatekeeper。支持Mac双击安装不代表已取得Apple公证。
 
 ## 本机首次安装
 
@@ -8,12 +20,11 @@
 
 ```sh
 npm ci
-npm run setup
 npm run build
 npm start
 ```
 
-向导填写存储位置（绝对路径）、飞书App ID、App Secret、模型Base URL、API Key、多模态模型名称、推理强度和网页端口。密钥不回显，回车可保留已有值。推理默认none，兼容不接受reasoning参数的模型。URL填写API基础地址，例如https://example.com/v1，不含密钥或/responses。
+启动后浏览器打开首次配置页，同Mac安装步骤。源码用户也可用npm run setup在终端配置存储位置、聊天渠道和凭证。密钥不回显，回车可保留已有值。推理默认none，兼容不接受reasoning参数的模型。URL填写API基础地址，例如https://example.com/v1，不含密钥或/responses。
 
 数据保存为“指定位置/data/config.env、ledger.sqlite、备份与附件等”，日志在“指定位置/logs”。源目录data/runtime-location.txt仅记录存储位置，不能代替账本备份。配置文件权限为600；现有账本不会自动搬到新目录，更换位置会打开另一套账本。
 
@@ -29,20 +40,13 @@ npm start
 
 ## Docker Compose
 
-需要Docker及Compose v2，Linux主机与Apple Silicon均可自行构建。以下命令均在script目录执行：
+需要Docker及Compose v2，镜像支持linux/amd64和linux/arm64。下载GitHub Release的compose.yaml，在其所在目录执行：
 
 ```sh
-docker compose build
-docker compose run --rm ledger npm --prefix /app/script run setup
 docker compose up -d
-docker compose ps
 ```
 
-默认持久目录是项目data/docker-storage，其中data保存账本和配置、logs供记录使用。容器以node用户（UID 1000）运行，Linux上挂载目录须由UID 1000读写；若提示EACCES，可先仅调整挂载目录权限，再运行向导：
-
-```sh
-docker compose run --rm --user root --entrypoint sh ledger -c 'mkdir -p /app/storage/data /app/storage/logs && chown -R 1000:1000 /app/storage'
-```
+首次运行自动下载ghcr.io/z2964141870-debug/record_money:0.4.0，无需构建或终端配置向导。打开http://127.0.0.1:4317完成网页配置。默认持久目录是compose文件旁的data/docker-storage，其中data保存账本和配置、logs供记录使用。启动入口以root仅准备挂载目录，再以node用户（UID 1000）运行服务；不递归修改原有文件权限。复用旧目录时，原有账本和配置仍须允许UID 1000读写。
 
 更换目录或端口时，在执行所有Compose命令的同一个终端设置：
 
@@ -51,7 +55,7 @@ export LEDGER_STORAGE=/absolute/path/record-money
 export LEDGER_WEB_PORT=4318
 ```
 
-也可把上述两个非密钥变量放到script/.env（Git忽略）。容器内部路径固定/app/storage，向导不修改挂载位置。容器内部服务监听0.0.0.0，但Compose只发布到主机127.0.0.1，且后端校验Host与CSRF。不应改成公网端口映射，网页无登录认证。
+也可把上述两个非密钥变量放到compose文件旁的.env（Git忽略）。容器内部路径固定/app/storage，网页中存储位置只读，外部路径由挂载指定。容器内部服务监听0.0.0.0，但Compose只发布到主机127.0.0.1，且后端校验Host与CSRF。不应改成公网端口映射，网页无登录认证。
 
 主机端口改为4318后，本机访问http://127.0.0.1:4318。远程管理通过SSH将本机4317转发到主机4318，然后访问本机4317：
 
@@ -68,7 +72,7 @@ docker compose exec ledger npm --prefix /app/script run backup
 docker compose down
 ```
 
-Docker标准输出由容器日志驱动保存并轮转；可用docker compose logs导出到指定位置/logs。升级时先备份，替换源码后docker compose build，再docker compose up -d，持续使用同一个LEDGER_STORAGE。不要删除数据目录。
+Docker标准输出由容器日志驱动保存并轮转；可用docker compose logs导出到指定位置/logs。升级时先备份，下载新版compose.yaml，在同一目录执行docker compose pull及docker compose up -d，持续使用同一个LEDGER_STORAGE。不要删除数据目录。源码自行构建可用docker build -f script/Dockerfile -t record-money:local .，再将compose镜像改为record-money:local。
 
 ## 发布源码压缩包
 
@@ -81,9 +85,11 @@ npm run build
 npm run release
 ```
 
-需要zip命令，默认输出data/releases/record-money-v0.3.1.zip和同名.sha256。也可npm run release -- /absolute/output。只按白名单打包代码、配置模板、许可证和可移植文档，data/logs只放空目录；不打包node_modules、构建产物、凭证、运行位置、截图、账本、日志或个人验收记录。源代码目录中的.env、数据库、私钥和明显API密钥会导致打包失败。FILES.sha256记录逐文件摘要，.zip.sha256用于下载校验。
+需要zip命令，默认输出data/releases/record-money-v0.4.0.zip和同名.sha256。也可npm run release -- /absolute/output。只按白名单打包代码、配置模板、许可证和可移植文档，data/logs只放空目录；源码包不打包node_modules、构建产物、凭证、运行位置、截图、账本、日志或个人验收记录。源代码目录中的.env、数据库、私钥和明显API密钥会导致打包失败。FILES.sha256记录逐文件摘要，.zip.sha256用于下载校验。
 
-把这两个文件上传到GitHub Releases即可供下载。当前脚本只生成本地包，不自动公开仓库或发布Release。仓库公开前应检查整个Git历史、许可证与文档；Git忽略只防止后续误提交，不能清除已经提交的内容。
+Mac维护者可运行npm run package:mac构建本机架构的预构建应用包，只从白名单代码和新安装的生产依赖构建，绝不复制开发数据。构建需要Xcode命令行工具，使用官方Node发行版（仅依赖系统动态库）。用户无需这些工具。
+
+.github/workflows/release.yml在推送v*版本标签后，自动测试、构建源码包、Apple Silicon和Intel安装包及两架构Docker镜像。全部成功后创建GitHub Release，附安装包、源码、校验和与compose.yaml；Docker发布到GHCR。需要仓库允许GitHub Actions，任务用仓库GITHUB_TOKEN，不需要额外存储个人发布密钥。新GHCR包首次发布后需检查公开可见性，确认匿名用户可以拉取。仓库公开前应检查整个Git历史；Git忽略不能清除已经提交的内容。
 
 ## 备份与恢复
 

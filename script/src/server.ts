@@ -21,7 +21,11 @@ import { createChart,renderChart } from './charts.js';
 import { saveImage, decodeImageDataUrl } from './images.js';
 import { currentModelService, resolveModelService, saveModelService } from './model-service.js';
 import { checkConnections } from './connection-check.js';
-export async function buildServer(db = openDb(), options: { configDir?: string; runtimeConfig?: typeof config; modelCheck?: typeof checkConnections } = {}) {
+import { needsSetup, persistInitialSetup, resolveSetup } from './onboarding.js';
+import { dirname } from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+export async function buildServer(db = openDb(), options: { configDir?: string; runtimeConfig?: typeof config; modelCheck?: typeof checkConnections; setupRoot?: string; fixedStorage?: boolean; restart?: () => void } = {}) {
   const modelConfig = options.runtimeConfig || config;
   initializeAccounts(db);
   const app = Fastify({ logger: { level: 'info', redact: ['req.headers.authorization', 'req.body', 'res.body'] }, logController: new LogController({ disableRequestLogging: true }), bodyLimit: 100_000 });
@@ -44,7 +48,31 @@ export async function buildServer(db = openDb(), options: { configDir?: string; 
     reply.code(400).send({ error: message.slice(0, 400) });
   });
   const filters = (query: unknown) => z.object({ start: dateSchema.optional(), end: dateSchema.optional(), kind: z.string().optional(), category: z.string().optional(), q: z.string().max(200).optional(), includeCancelled: z.enum(['true', 'false']).optional() }).parse(query);
-  app.get('/api/bootstrap', async () => ({ csrf, version: '0.3.1', today: today() }));
+  const setupData = options.configDir || dataDir, fixedStorage = options.fixedStorage ?? !!process.env.LEDGER_DATA_DIR;
+  let settingUp = false;
+  app.get('/api/bootstrap', async () => ({ csrf, product: 'record-money', version: '0.4.0', today: today(), setupRequired: needsSetup(modelConfig) }));
+  app.get('/api/setup', async () => ({ required: needsSetup(modelConfig), storage: dirname(setupData), fixedStorage,
+    channel: modelConfig.channel,
+    canChooseFolder: !!process.env.LEDGER_DIRECTORY_PICKER, appId: modelConfig.appId, baseUrl: modelConfig.aiBaseUrl,
+    model: modelConfig.model, reasoning: modelConfig.reasoning, restarting: settingUp }));
+  app.post('/api/setup', async (req, reply) => {
+    if (!needsSetup(modelConfig) || settingUp) return reply.code(409).send({ error: '初始化已完成或正在保存，请刷新页面' });
+    if (!options.restart) throw new Error('此启动方式不支持自动重启，请使用应用或容器启动');
+    const next = resolveSetup(modelConfig, setupData, fixedStorage, req.body);
+    settingUp = true;
+    try {
+      const results = await (options.modelCheck || checkConnections)(next.value);
+      if (results.some(r => !r.ok)) { settingUp = false; return reply.code(400).send({ error: '配置尚未保存：' + results.filter(r => !r.ok).map(r => r.service + ' · ' + r.detail).join('；'), results }); }
+      const result = persistInitialSetup(db, modelConfig, options.setupRoot || process.env.LEDGER_POINTER_ROOT || root, setupData, fixedStorage, req.body);
+      const timer = setTimeout(options.restart, 500); timer.unref();
+      return result;
+    } catch (e) { settingUp = false; throw e; }
+  });
+  app.post('/api/setup/folder', async (_req, reply) => {
+    if (!needsSetup(modelConfig) || fixedStorage || !process.env.LEDGER_DIRECTORY_PICKER) return reply.code(409).send({ error: '当前部署不支持选择文件夹' });
+    try { const { stdout } = await promisify(execFile)(process.env.LEDGER_DIRECTORY_PICKER, ['--choose-folder'], { timeout: 120000, maxBuffer: 8192 }); return { storage: stdout.trim() || null }; }
+    catch { throw new Error('未能打开文件夹选择器，可直接填写存储路径'); }
+  });
   app.get('/api/possessions',async req=>listPossessions(db,today(),z.object({archived:z.enum(['true','false']).optional()}).parse(req.query).archived==='true'));
   app.post('/api/possessions',async req=>savePossession(db,req.body));
   app.put<{Params:{id:string}}>('/api/possessions/:id',async req=>savePossession(db,req.body,z.coerce.number().int().positive().parse(req.params.id)));
@@ -87,7 +115,7 @@ export async function buildServer(db = openDb(), options: { configDir?: string; 
     confirmations: db.prepare('SELECT * FROM confirmations WHERE resolved_at IS NULL ORDER BY id DESC').all().map(raw => { const c = raw as { action_json: string }; const saved = JSON.parse(c.action_json); return { ...c, action: saved.action, candidates: saved.candidates.map((id: number) => { try { return getEntry(db, id); } catch { return null; } }).filter(Boolean) }; }),
     outbox: (db.prepare("SELECT COUNT(*) AS n FROM outbox WHERE status='pending'").get() as { n: number }).n,
     lastBackup: setting(db, 'backup_date'), dataDir, reminder: reminderSettings(db), model: setting(db, 'model', modelConfig.model), reasoning: setting(db, 'reasoning', modelConfig.reasoning),
-    baseUrl: modelConfig.aiBaseUrl, aiConfigured: !!modelConfig.aiKey, feishuConfigured: !!config.appId && !!config.appSecret, appId: config.appId }));
+    baseUrl: modelConfig.aiBaseUrl, aiConfigured: !!modelConfig.aiKey, feishuConfigured: !!config.appId && !!config.appSecret, appId: config.appId, channel: config.channel }));
   app.post('/api/bind', async req => {
     const { user } = z.object({ user: z.string().min(1).max(100) }).parse(req.body);
     if (setting(db, 'owner') && user !== setting(db, 'owner')) throw new Error('v0.1不支持切换账本所有者');
@@ -141,6 +169,7 @@ export async function buildServer(db = openDb(), options: { configDir?: string; 
   let timer: NodeJS.Timeout | undefined;
   app.addHook('onClose', async () => { if (timer) clearInterval(timer); bot.stop(); db.close(); });
   const startBackground = () => {
+    if (needsSetup(modelConfig)) return;
     void bot.start();
     let ticking = false;
     const tick = async () => { if (ticking) return; ticking = true; try { runReminder(db); runSchedule(db); runOperationRecords(db); await backup(db); } catch { app.log.warn('Periodic task failed; check local storage'); } finally { ticking = false; } };
@@ -149,7 +178,7 @@ export async function buildServer(db = openDb(), options: { configDir?: string; 
   return { app, db, bot, startBackground };
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const { app, startBackground } = await buildServer();
+  const { app, startBackground } = await buildServer(undefined, { restart: () => { void app.close().then(() => process.exit(75)); } });
   await app.listen({ host: config.host, port: config.port }); startBackground();
   const stop = async () => { await app.close(); process.exit(0); };
   process.on('SIGTERM', stop); process.on('SIGINT', stop);

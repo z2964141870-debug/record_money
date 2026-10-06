@@ -40,8 +40,11 @@ try {
       }
     } finally { db.close(); }
   }
+  const channel = await ask('聊天渠道（feishu/dingtalk）', old.CHAT_CHANNEL || 'feishu');
   const raw = {
-    appId: await ask('飞书App ID', old.FEISHU_APP_ID), appSecret: await ask('飞书App Secret', old.FEISHU_APP_SECRET, true),
+    channel,
+    appId: await ask(channel === 'dingtalk' ? '钉钉Client ID' : '飞书App ID', channel === 'dingtalk' ? old.DINGTALK_CLIENT_ID : old.FEISHU_APP_ID),
+    appSecret: await ask(channel === 'dingtalk' ? '钉钉Client Secret' : '飞书App Secret', channel === 'dingtalk' ? old.DINGTALK_CLIENT_SECRET : old.FEISHU_APP_SECRET, true),
     aiBaseUrl: await ask('AI Base URL', old.AI_BASE_URL || 'https://api.openai.com/v1'), aiKey: await ask('AI API Key', old.AI_API_KEY, true),
     model: await ask('多模态模型名称', old.AI_MODEL), reasoning: await ask('推理强度（none/low/medium/high）', old.AI_REASONING || 'none'),
     port: Number(await ask('本机网页端口', old.PORT || '4317')),

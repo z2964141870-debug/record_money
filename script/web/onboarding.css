@@ -1,0 +1,13 @@
+.setup-page { max-width: 1040px; margin: 0 auto; padding: 32px 28px 64px; }
+.setup-brand { display: flex; align-items: center; gap: 12px; padding-bottom: 24px; border-bottom: 1px solid #dce5e1; color: #276d5c; }
+.setup-brand strong { font-size: 19px; }.setup-brand span { margin-left: auto; color: #707b76; font-size: 13px; }
+.setup-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(240px, 1fr); gap: 64px; padding-top: 32px; }
+.setup-form { min-width: 0; }.setup-form h1 { font-size: 26px; margin: 0 0 28px; }.setup-form fieldset { border: 0; padding: 0; margin: 0 0 24px; }
+.setup-form legend { font-size: 16px; font-weight: 600; margin-bottom: 16px; }.setup-form label { display: block; margin-bottom: 16px; }
+.setup-form input,.setup-form select { width: 100%; min-width: 0; }.setup-advanced { margin: 0 0 24px; }.setup-advanced summary { cursor: pointer; color: #596e63; padding-bottom: 16px; font-size: 14px; }
+.setup-folder { display: flex; gap: 8px; align-items: center; }.setup-submit { min-height: 42px; }.setup-help { border-left: 1px solid #dce5e1; padding-left: 28px; }
+.setup-help h2 { font-size: 16px; margin: 0 0 12px; }.setup-help h2:not(:first-child) { margin-top: 30px; }.setup-help p,.feishu-guide p { color: #65716b; font-size: 13px; line-height: 1.8; }
+.feishu-guide { border-bottom: 1px solid #dce5e1; padding-bottom: 24px; margin-bottom: 28px; }.feishu-guide h2 { font-size: 18px; }
+.feishu-guide ol { padding-left: 20px; }.feishu-guide li { margin: 18px 0; line-height: 1.8; }.feishu-guide a { display: inline-flex; align-items: center; gap: 4px; color: #276d5c; }.feishu-guide li > .button { margin-left: 16px; }
+.bind-candidate { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 12px; }.bind-candidate span { overflow-wrap: anywhere; font-size: 13px; }
+@media (max-width: 680px) { .setup-page { padding: 22px 20px 40px; }.setup-layout { grid-template-columns: minmax(0, 1fr); gap: 32px; }.setup-help { border-left: 0; border-top: 1px solid #dce5e1; padding: 24px 0 0; }.feishu-guide li > .button { margin: 8px 0 0; display: flex; width: fit-content; } }
