@@ -16,7 +16,7 @@ let launcher = '';
 let currentPort = 0;
 try {
   const archive = join(root, 'data/releases', `record-money-v${version}-windows-x64.zip`);
-  execFileSync(powershell, ['-NoProfile', '-NonInteractive', '-Command', '$ErrorActionPreference="Stop"; Expand-Archive -LiteralPath $env:RM_ARCHIVE -DestinationPath $env:RM_EXTRACT'],
+  execFileSync(powershell, ['-NoProfile', '-NonInteractive', '-Command', '$ErrorActionPreference="Stop"; Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory($env:RM_ARCHIVE, $env:RM_EXTRACT)'],
     { env: { ...process.env, RM_ARCHIVE: archive, RM_EXTRACT: join(temp, 'extracted') } });
   const bundle = join(temp, 'extracted', `record-money-v${version}-windows-x64`);
   console.log('Extracted Windows package');
@@ -89,6 +89,10 @@ try {
   assert.ok(existsSync(join(storage, 'data/backups')));
   assert.equal(readFileSync(join(home, 'data/runtime-location.txt'), 'utf8').trim(), storage);
   console.log('Windows smoke passed: extracted package, Unicode paths, native dependencies, startup, three PNG charts, restart, supervisor crash cleanup, backup, upgrade and preserved ledger/history.');
+} catch (error) {
+  const logs = join(storage, 'logs', 'stderr.log');
+  if (existsSync(logs)) console.error(readFileSync(logs, 'utf8').slice(-4000));
+  throw error;
 } finally {
   if (launcher) { try { execFileSync(launcher, ['--stop', '--destination', home], { timeout: 20000 }); } catch {} }
   rmSync(temp, { recursive: true, force: true });

@@ -302,7 +302,7 @@ internal static class RecordMoney
             }
             return 0;
         } catch (Exception error) {
-            if (Array.IndexOf(args, "--headless") >= 0 || Array.IndexOf(args, "--install-only") >= 0 || Array.IndexOf(args, "--serve") >= 0) Console.Error.WriteLine(error.Message);
+            if (Array.IndexOf(args, "--headless") >= 0 || Array.IndexOf(args, "--install-only") >= 0 || Array.IndexOf(args, "--serve") >= 0 || Array.IndexOf(args, "--stop") >= 0 || Array.IndexOf(args, "--status") >= 0) Console.Error.WriteLine(error.Message);
             else MessageBox.Show(error.Message, "私人记账助手", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }

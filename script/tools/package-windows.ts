@@ -38,7 +38,7 @@ try {
   const archive = join(output, `record-money-v${version}-windows-x64.zip`);
   if (existsSync(archive)) throw new Error('安装包已存在，请选择新输出目录');
   const powershell = join(process.env.SystemRoot || 'C:\\Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe');
-  execFileSync(powershell, ['-NoProfile', '-NonInteractive', '-Command', '$ErrorActionPreference="Stop"; Compress-Archive -LiteralPath $env:RM_STAGE_ROOT -DestinationPath $env:RM_ARCHIVE -CompressionLevel Optimal'],
+  execFileSync(powershell, ['-NoProfile', '-NonInteractive', '-Command', '$ErrorActionPreference="Stop"; Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::CreateFromDirectory($env:RM_STAGE_ROOT, $env:RM_ARCHIVE, [System.IO.Compression.CompressionLevel]::Optimal, $true)'],
     { env: { ...process.env, RM_STAGE_ROOT: stage, RM_ARCHIVE: archive }, stdio: 'inherit' });
   writeFileSync(archive + '.sha256', createHash('sha256').update(readFileSync(archive)).digest('hex') + '  ' + archive.split(/[\\/]/).at(-1) + '\n');
   console.log(JSON.stringify({ archive, version, arch: 'x64', signed: false }));
