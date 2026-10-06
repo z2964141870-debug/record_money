@@ -15,6 +15,16 @@ import {parseActions} from '../src/ai.js';
 import {chartSnapshot,renderChart,createChart} from '../src/charts.js';
 import {normalizeImage,decodeImageDataUrl} from '../src/images.js';
 import {backupAssets,restoreAssets} from '../src/backup-assets.js';
+import {Readable} from 'node:stream';
+import {downloadFeishuImage,FeishuImageError} from '../src/feishu-images.js';
+test('Feishu image downloads report permission errors separately and retry transient failures',async()=>{
+  const permission={response:{status:400,data:Readable.from([JSON.stringify({code:99991672,msg:'Access denied'})])}};
+  await assert.rejects(downloadFeishuImage(async()=>{throw permission;}),error=>error instanceof FeishuImageError&&!error.retryable&&error.message.includes('im:message:readonly')&&!error.message.includes('模型'));
+  await assert.rejects(downloadFeishuImage(async()=>{throw {response:{status:503,data:{}}};}),error=>error instanceof FeishuImageError&&error.retryable);
+  await assert.rejects(downloadFeishuImage(async()=>{throw {response:{status:404,data:{}}};}),error=>error instanceof FeishuImageError&&!error.retryable);
+  const bytes=Buffer.from('image bytes');assert.deepEqual(await downloadFeishuImage(async()=>({getReadableStream:()=>Readable.from([bytes])})),bytes);
+  await assert.rejects(downloadFeishuImage(async()=>({getReadableStream:()=>Readable.from([Buffer.alloc(8*1024*1024+1)])})),error=>error instanceof FeishuImageError&&!error.retryable&&error.message.includes('8MB'));
+});
 test('possessions calculate exact calendar days, preserve unknowns and never duplicate expense or assets',()=>{
   const db=openDb(':memory:');const p=savePossession(db,{name:'手机',price:300000,purchased_on:'2021-09-30'});
   assert.equal(usage(p,'2026-10-06').usage_days,1832);assert.equal(usage({...p,purchased_on:'2024-02-28'},'2024-03-01').usage_days,2);

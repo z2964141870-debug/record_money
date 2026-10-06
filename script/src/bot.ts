@@ -5,7 +5,8 @@ import { processMessage, queueReply, receiveMessage } from './assistant.js';
 import { cancelObsoleteReminders } from './reminders.js';
 import { createReadStream,existsSync,writeFileSync,mkdirSync } from 'node:fs';
 import {dirname} from 'node:path';
-import { saveImage, maxImageBytes } from './images.js';
+import { saveImage } from './images.js';
+import { downloadFeishuImage, FeishuImageError } from './feishu-images.js';
 import { renderChart } from './charts.js';
 export type BotStatus = { state: string; lastReceived: string | null; lastSent: string | null; lastError: string | null };
 export function createBot(db: DB) {
@@ -28,17 +29,19 @@ export function createBot(db: DB) {
           const image=db.prepare('SELECT image_key,path FROM message_images WHERE message_id=?').get(message.id) as {image_key:string;path:string|null}|undefined;
           if(image&&(!image.path||!existsSync(image.path))) {
             if(!client)throw new Error('飞书图片下载服务尚未配置');
-            const resource=await client.im.messageResource.get({path:{message_id:message.id,file_key:image.image_key},params:{type:'image'}});
-            const chunks:Buffer[]=[];let size=0;
-            const stream=resource.getReadableStream();
-            for await(const chunk of stream) {const bytes=Buffer.from(chunk);size+=bytes.length;if(size>maxImageBytes){stream.destroy();throw new Error('图片超过8MB，请压缩后重发');}chunks.push(bytes);}
-            const path=await saveImage(Buffer.concat(chunks));db.prepare('UPDATE message_images SET path=? WHERE message_id=?').run(path,message.id);
+            const bytes=await downloadFeishuImage(()=>client.im.messageResource.get({path:{message_id:message.id,file_key:image.image_key},params:{type:'image'}}));
+            const path=await saveImage(bytes);db.prepare('UPDATE message_images SET path=? WHERE message_id=?').run(path,message.id);
           }
           await processMessage(db, message.id);
         }
         catch (error) {
           const msg = db.prepare('SELECT user_id,attempts FROM messages WHERE id=?').get(message.id) as { user_id: string; attempts: number };
           const attempts = msg.attempts + 1;
+          if (error instanceof FeishuImageError) {
+            db.prepare('UPDATE messages SET attempts=?,next_attempt=?,status=?,error=? WHERE id=?').run(attempts, Date.now() + Math.min(300000, 15000 * 2 ** attempts), error.retryable && attempts < 3 ? 'pending' : 'needs_attention', error.message, message.id);
+            queueReply(db, msg.user_id, error.message, 'image-failure:' + message.id);
+            return;
+          }
           const transient = error instanceof Error && (/timeout|fetch|connect|ECONN|rate|429|5\d\d|JSON|Unexpected|模型/i.test(error.message) || 'status' in error);
           if (!transient) {
             const text = '未完成记账：' + (error instanceof Error ? error.message : '请检查输入');
