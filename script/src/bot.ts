@@ -21,12 +21,17 @@ export function acceptDingMessage(db: DB, message: DingMessage) {
     return saved;
   })();
 }
-export function createBot(db: DB) {
+export function createBot(db: DB, options: {
+  socketFactory?: (params: ConstructorParameters<typeof lark.WSClient>[0]) => lark.WSClient;
+  now?: () => number;
+} = {}) {
   const status: BotStatus = { state: 'disabled', lastReceived: null, lastSent: null, lastError: null };
   const quietLogger = { debug: (..._args: unknown[]) => {}, info: (..._args: unknown[]) => {}, warn: (..._args: unknown[]) => {}, error: (..._args: unknown[]) => {}, trace: (..._args: unknown[]) => {} };
   const client = config.channel === 'feishu' && config.appId && config.appSecret ? new lark.Client({ appId: config.appId, appSecret: config.appSecret, disableTokenCache: false, logger: quietLogger }) : undefined;
   const ding = config.channel === 'dingtalk' && config.appId && config.appSecret ? createDingTalkTransport(config) : undefined;
   let ws: lark.WSClient | undefined, busy = false, stopped = false;
+  const now = options.now || Date.now;
+  let lastTick = now(), lastReconnect = 0, restoring = false;
   const logger = {
     debug: (..._args: unknown[]) => {}, trace: (..._args: unknown[]) => {},
     info: (..._args: unknown[]) => {},
@@ -34,6 +39,20 @@ export function createBot(db: DB) {
     error: (..._args: unknown[]) => { status.state = 'error'; status.lastError = '飞书连接失败，请核对凭证、应用发布与事件订阅'; },
   };
   async function tick() {
+    if (stopped) return;
+    const time = now(), resumed = time - lastTick > 60000;
+    lastTick = time;
+    if (ws && !restoring) {
+      const connection = ws.getConnectionStatus();
+      status.state = connection.state === 'failed' ? 'error' : connection.state === 'idle' ? 'reconnecting' : connection.state;
+      if (resumed || connection.state === 'idle' && time - lastReconnect >= 30000) {
+        restoring = true; lastReconnect = time;
+        status.state = 'reconnecting';
+        // A socket can still report OPEN after the Mac wakes with a dead connection.
+        ws.close({ force: true }); ws = undefined;
+        try { await start(); } finally { restoring = false; }
+      }
+    }
     if (busy || stopped) return; busy = true;
     try {
       if (ding && config.feishuEnabled) status.state = ding.state();
@@ -129,12 +148,13 @@ export function createBot(db: DB) {
         })();
       },
     });
-    ws = new lark.WSClient({ appId: config.appId, appSecret: config.appSecret, logger, autoReconnect: true, handshakeTimeoutMs: 15000,
+    const params: ConstructorParameters<typeof lark.WSClient>[0] = { appId: config.appId, appSecret: config.appSecret, logger, autoReconnect: true, handshakeTimeoutMs: 15000,
       onReady: () => { status.state = 'connected'; status.lastError = null; },
       onReconnecting: () => { status.state = 'reconnecting'; },
       onReconnected: () => { status.state = 'connected'; status.lastError = null; },
       onError: () => { status.state = 'error'; status.lastError = '飞书长连接失败，请核对应用配置'; },
-    });
+    };
+    ws = options.socketFactory ? options.socketFactory(params) : new lark.WSClient(params);
     try { await ws.start({ eventDispatcher: dispatcher }); }
     catch { status.state = 'error'; status.lastError = '无法建立长连接，请核对飞书设置'; }
   }
