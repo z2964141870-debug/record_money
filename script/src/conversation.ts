@@ -13,7 +13,9 @@ export function conversationInput(db: DB, text: string, context?: { user: string
   const input: { role: 'user' | 'assistant'; content: string }[] = [];
   if (context) {
     const rows = db.prepare(`SELECT text,result,received_at FROM messages WHERE user_id=? AND status='done' AND result IS NOT NULL
-      AND rowid < (SELECT rowid FROM messages WHERE id=?) ORDER BY rowid DESC LIMIT 8`).all(context.user, context.messageId) as { text: string; result: string; received_at: string }[];
+      AND (received_at < (SELECT received_at FROM messages WHERE id=?) OR
+        (received_at = (SELECT received_at FROM messages WHERE id=?) AND rowid < (SELECT rowid FROM messages WHERE id=?)))
+      ORDER BY received_at DESC,rowid DESC LIMIT 8`).all(context.user, context.messageId, context.messageId, context.messageId) as { text: string; result: string; received_at: string }[];
     for (const row of rows.reverse()) {
       input.push({ role: 'user', content: row.text });
       if (row.result.length <= 6000) input.push({ role: 'assistant', content: row.result });

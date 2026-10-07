@@ -17,7 +17,7 @@
 | `im:message.p2p_msg:readonly` | 接收发给机器人的私聊消息 |
 | `im:message:send_as_bot` | 发送回执、提醒和账单 |
 | `im:resource` | 上传账单图表 |
-| `im:message:readonly` | 下载你发来的图片 |
+| `im:message:readonly` | 下载图片、补收离线私聊消息 |
 
 ## 接收消息并发布
 
@@ -27,5 +27,7 @@
 4. 发 `奶茶20` 测试，确认收到回执且网页有记录。测试后可撤销。
 
 找不到机器人：检查发布状态和可用范围。收不到消息：检查长连接事件和用户绑定。图片下载失败：检查 `im:message:readonly`；只开 `im:resource` 不够。
+
+Mac睡眠时暂停记账，开盖并恢复网络后自动重连、补收。疑似重复或后续已经处理的旧消息，需在网页“运行状态”核对后重试或忽略。
 
 [返回安装说明](DISTRIBUTION.md) · [飞书官方教程](https://open.feishu.cn/document/develop-an-echo-bot/introduction)

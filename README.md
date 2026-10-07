@@ -20,7 +20,7 @@
 
 想用便宜模型，可以考虑阿里云 `qwen3.7-flash`：官方支持读图和结构化输出，北京地域≤32K输入时每百万Token输入/输出为0.2/0.8元（2026-10-06核对，[计费来源](https://help.aliyun.com/zh/model-studio/model-pricing)）。本项目尚未实测该模型，接入后请先测试连接与非敏感样例。
 
-Windows支持Windows 10 22H2/11的64位Intel/AMD电脑。Mac支持macOS 14及以上，M系列和Intel分别下载对应版本。首次打开可能需要系统安全确认。睡眠、合盖可能会中断服务，可调整电源设置；关机后服务停止。全天在线请用服务器或NAS。
+Windows支持Windows 10 22H2/11的64位Intel/AMD电脑。Mac支持macOS 14及以上，M系列和Intel分别下载对应版本。首次打开可能需要系统安全确认。睡眠期间暂停处理，飞书在开盖联网后自动重连补收；关机后服务停止。全天在线请用服务器或NAS。
 
 [使用说明](reports/README.md) · [安装与服务器部署](reports/DISTRIBUTION.md) · [模型配置](reports/MODELS.md)
 

@@ -10,7 +10,10 @@ import { downloadFeishuImage, FeishuImageError } from './feishu-images.js';
 import { renderChart } from './charts.js';
 import { createDingTalkTransport, DingTalkImageError, type DingMessage } from './dingtalk.js';
 import { ModelFailure, modelCapabilities, modelRuntime } from './model-api.js';
-export type BotStatus = { state: string; lastReceived: string | null; lastSent: string | null; lastError: string | null };
+import { acceptFeishuMessage, decodeFeishuHistory, recoverFeishuHistory, HistoryFailure, type HistoryAPI } from './feishu-history.js';
+import { watchSystemWake } from './wake-monitor.js';
+export type BotStatus = { state: string; lastReceived: string | null; lastSent: string | null; lastError: string | null;
+  lastWake: string | null; recovery: { state: string; lastSynced: string | null; recovered: number; error: string | null } };
 export function acceptDingMessage(db: DB, message: DingMessage) {
   const owner = setting(db, 'owner');
   if (!owner) { setSetting(db, 'pending_user', message.user); return false; }
@@ -24,14 +27,48 @@ export function acceptDingMessage(db: DB, message: DingMessage) {
 export function createBot(db: DB, options: {
   socketFactory?: (params: ConstructorParameters<typeof lark.WSClient>[0]) => lark.WSClient;
   now?: () => number;
+  historyAPI?: HistoryAPI;
+  watchWake?: typeof watchSystemWake;
+  feishuClient?: lark.Client;
 } = {}) {
-  const status: BotStatus = { state: 'disabled', lastReceived: null, lastSent: null, lastError: null };
+  const status: BotStatus = { state: 'disabled', lastReceived: null, lastSent: null, lastError: null, lastWake: null,
+    recovery: { state: 'idle', lastSynced: null, recovered: 0, error: null } };
   const quietLogger = { debug: (..._args: unknown[]) => {}, info: (..._args: unknown[]) => {}, warn: (..._args: unknown[]) => {}, error: (..._args: unknown[]) => {}, trace: (..._args: unknown[]) => {} };
-  const client = config.channel === 'feishu' && config.appId && config.appSecret ? new lark.Client({ appId: config.appId, appSecret: config.appSecret, disableTokenCache: false, logger: quietLogger }) : undefined;
+  const client = config.channel === 'feishu' && config.appId && config.appSecret ? options.feishuClient || new lark.Client({ appId: config.appId, appSecret: config.appSecret, disableTokenCache: false, logger: quietLogger }) : undefined;
   const ding = config.channel === 'dingtalk' && config.appId && config.appSecret ? createDingTalkTransport(config) : undefined;
   let ws: lark.WSClient | undefined, busy = false, stopped = false;
   const now = options.now || Date.now;
-  let lastTick = now(), lastReconnect = 0, restoring = false;
+  let lastTick = now(), lastReconnect = 0, restoring = false, wakePending = false, fastRecoveryUntil = 0;
+  let syncRequested = false, nextSync = 0, syncAttempts = 0;
+  async function historyCall<T extends { code?: number }>(request: Promise<T>): Promise<T> {
+    let timeout: NodeJS.Timeout | undefined;
+    try {
+      const result = await Promise.race([request, new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new HistoryFailure('飞书离线补收暂未连通，联网后自动重试')), 10000); })]);
+      if (result.code === 99991672) throw new HistoryFailure('飞书离线补收需要 im:message:readonly 或 im:message.history:readonly 权限，开通后需发布应用', false);
+      if (result.code !== 0) throw new HistoryFailure('飞书离线补收失败，稍后自动重试');
+      return result;
+    } catch (error) {
+      if (error instanceof HistoryFailure) throw error;
+      const response = (error as { response?: { status?: number; data?: { code?: number } } })?.response;
+      if (response?.status === 403 || response?.data?.code === 99991672) throw new HistoryFailure('飞书离线补收需要消息读取权限，开通后需发布应用', false);
+      throw new HistoryFailure('飞书离线补收暂未连通，联网后自动重试');
+    } finally { if (timeout) clearTimeout(timeout); }
+  }
+  const historyAPI = options.historyAPI || (client ? {
+    chatForMessage: async (id: string) => (await historyCall(client.im.message.get({ path: { message_id: id } }))).data?.items?.[0]?.chat_id,
+    page: async (input: { chat: string; start: string; end: string; token?: string }) => {
+      const response = await historyCall(client.im.message.list({ params: { container_id_type: 'chat', container_id: input.chat, start_time: input.start,
+        end_time: input.end, sort_type: 'ByCreateTimeAsc', page_size: 50, page_token: input.token } }));
+      if (!response.data || !Array.isArray(response.data.items)) throw new HistoryFailure('飞书历史消息响应不完整，稍后自动重试');
+      return { items: response.data?.items || [], hasMore: response.data?.has_more || false, token: response.data?.page_token };
+    },
+  } : undefined);
+  function requestWake() {
+    if (stopped) return;
+    status.lastWake = new Date(now()).toISOString();
+    wakePending = true; fastRecoveryUntil = now() + 90000; syncRequested = true; nextSync = 0;
+    void tick().catch(() => { status.lastError = '唤醒恢复失败，将自动重试'; });
+  }
   const logger = {
     debug: (..._args: unknown[]) => {}, trace: (..._args: unknown[]) => {},
     info: (..._args: unknown[]) => {},
@@ -40,13 +77,16 @@ export function createBot(db: DB, options: {
   };
   async function tick() {
     if (stopped) return;
-    const time = now(), resumed = time - lastTick > 60000;
+    const time = now(), resumed = time - lastTick > 10000;
     lastTick = time;
+    if (resumed) { wakePending = true; fastRecoveryUntil = time + 90000; syncRequested = true; nextSync = 0; status.lastWake = new Date(time).toISOString(); }
     if (ws && !restoring) {
       const connection = ws.getConnectionStatus();
       status.state = connection.state === 'failed' ? 'error' : connection.state === 'idle' ? 'reconnecting' : connection.state;
-      if (resumed || connection.state === 'idle' && time - lastReconnect >= 30000) {
+      const slowRetry = ['connecting', 'reconnecting'].includes(connection.state) && (connection.nextConnectTime || 0) > time + 5000;
+      if (wakePending || connection.state === 'idle' && time - lastReconnect >= 5000 || time < fastRecoveryUntil && slowRetry && time - lastReconnect >= 5000) {
         restoring = true; lastReconnect = time;
+        wakePending = false; syncRequested = true; nextSync = 0;
         status.state = 'reconnecting';
         // A socket can still report OPEN after the Mac wakes with a dead connection.
         ws.close({ force: true }); ws = undefined;
@@ -56,7 +96,29 @@ export function createBot(db: DB, options: {
     if (busy || stopped) return; busy = true;
     try {
       if (ding && config.feishuEnabled) status.state = ding.state();
-      const message = db.prepare("SELECT id,next_attempt FROM messages WHERE status='pending' AND user_id!='local' ORDER BY received_at,id LIMIT 1").get() as { id: string; next_attempt: number } | undefined;
+      if (historyAPI && config.feishuEnabled && !restoring && (syncRequested || time >= nextSync)) {
+        if (time >= nextSync) {
+          syncRequested = false; status.recovery.state = 'syncing';
+          try {
+            const result = await recoverFeishuHistory(db, historyAPI, config.appId, now(), () => stopped);
+            if (stopped) return;
+            status.recovery.state = 'idle'; status.recovery.error = null; status.recovery.recovered += result.recovered;
+            status.recovery.lastSynced = new Date(now()).toISOString(); syncAttempts = 0; nextSync = syncRequested ? 0 : now() + 60000;
+            if (result.recovered) status.lastReceived = new Date(now()).toISOString();
+            if (ws && (ws.getConnectionStatus().nextConnectTime || 0) > now()) wakePending = true;
+          } catch (error) {
+            if (stopped) return;
+            const retryable = !(error instanceof HistoryFailure) || error.retryable;
+            status.recovery.state = retryable ? 'retrying' : 'blocked';
+            status.recovery.error = error instanceof HistoryFailure ? error.message : '离线消息补收失败，将自动重试';
+            syncRequested = true; syncAttempts++;
+            nextSync = now() + (retryable ? Math.min(30000, 2000 * 2 ** Math.min(syncAttempts - 1, 4)) : 60000);
+          }
+        }
+      }
+      if (stopped) return;
+      const canProcess = !restoring && (!historyAPI || !syncRequested || status.recovery.state === 'blocked');
+      const message = canProcess ? db.prepare("SELECT id,next_attempt FROM messages WHERE status='pending' AND user_id!='local' ORDER BY received_at,rowid LIMIT 1").get() as { id: string; next_attempt: number } | undefined : undefined;
       if (message && message.next_attempt <= Date.now()) {
         try {
           const image=db.prepare('SELECT image_key,path FROM message_images WHERE message_id=?').get(message.id) as {image_key:string;path:string|null}|undefined;
@@ -121,7 +183,7 @@ export function createBot(db: DB, options: {
     } finally { busy = false; }
   }
   async function start() {
-    if (!config.feishuEnabled || !config.appId || !config.appSecret) return;
+    if (stopped || !config.feishuEnabled || !config.appId || !config.appSecret) return;
     status.state = 'connecting';
     if (ding) {
       try { await ding.start(message => {
@@ -133,25 +195,19 @@ export function createBot(db: DB, options: {
     const dispatcher = new lark.EventDispatcher({}).register({
       'im.message.receive_v1': async (event) => {
         if (event.sender?.sender_type !== 'user' || event.message?.chat_type !== 'p2p' || !['text','image'].includes(event.message.message_type)) return;
-        const user = event.sender.sender_id?.open_id; if (!user) return;
-        const owner = setting(db, 'owner');
-        if (!owner) { setSetting(db, 'pending_user', user); return; }
-        if (owner !== user) return;
-        let text: string,imageKey:string|undefined;
-        try { const content=JSON.parse(event.message.content);if(event.message.message_type==='image'){imageKey=content.image_key;if(typeof imageKey!=='string'||imageKey.length>200)return;text='[用户发送图片，请提取文字]';}else text=content.text; } catch { return; }
-        if (typeof text !== 'string' || text.length > 4000) return;
-        const timestamp = Number(event.message.create_time);
+        if (stopped) return;
+        const message = decodeFeishuHistory({ message_id: event.message.message_id, chat_id: event.message.chat_id,
+          msg_type: event.message.message_type, create_time: event.message.create_time, body: { content: event.message.content },
+          sender: { sender_type: event.sender.sender_type, id: event.sender.sender_id?.open_id, id_type: 'open_id' }, parent_id: event.message.parent_id });
+        if (!message || !acceptFeishuMessage(db, message, config.appId)) return;
         status.state = 'connected'; status.lastReceived = new Date().toISOString();
-        db.transaction(()=>{
-          const received=receiveMessage(db, event.message.message_id, user, text, event.message.parent_id, Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : undefined);
-          if(received&&imageKey)db.prepare('INSERT INTO message_images(message_id,image_key) VALUES(?,?)').run(event.message.message_id,imageKey);
-        })();
       },
     });
     const params: ConstructorParameters<typeof lark.WSClient>[0] = { appId: config.appId, appSecret: config.appSecret, logger, autoReconnect: true, handshakeTimeoutMs: 15000,
-      onReady: () => { status.state = 'connected'; status.lastError = null; },
+      wsConfig: { pingTimeout: 10 },
+      onReady: () => { if (!stopped) { status.state = 'connected'; status.lastError = null; syncRequested = true; nextSync = 0; } },
       onReconnecting: () => { status.state = 'reconnecting'; },
-      onReconnected: () => { status.state = 'connected'; status.lastError = null; },
+      onReconnected: () => { if (!stopped) { status.state = 'connected'; status.lastError = null; syncRequested = true; nextSync = 0; } },
       onError: () => { status.state = 'error'; status.lastError = '飞书长连接失败，请核对应用配置'; },
     };
     ws = options.socketFactory ? options.socketFactory(params) : new lark.WSClient(params);
@@ -160,5 +216,6 @@ export function createBot(db: DB, options: {
   }
   const timer = setInterval(() => { void tick().catch(() => { status.lastError = '后台任务失败，请查看运行状态'; }); }, 2000);
   timer.unref();
-  return { status, start, stop: () => { stopped = true; clearInterval(timer); ws?.close(); ding?.stop(); }, tick };
+  const stopWake = client && config.feishuEnabled ? (options.watchWake || watchSystemWake)(requestWake) : () => {};
+  return { status, start, stop: () => { stopped = true; clearInterval(timer); stopWake(); ws?.close(); ding?.stop(); }, tick };
 }

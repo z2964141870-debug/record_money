@@ -48,8 +48,9 @@ export function imageAlreadyImported(db: DB, id: string) {
 export function latestImageDraft(db: DB, user: string, beforeId: string) {
   const message = db.prepare('SELECT reply_to FROM messages WHERE id=?').get(beforeId) as { reply_to: string | null } | undefined;
   const read = (id?: string | null) => db.prepare(`SELECT d.* FROM image_drafts d JOIN messages m ON m.id=d.message_id
-    WHERE m.user_id=? AND m.rowid<(SELECT rowid FROM messages WHERE id=?) ${id ? 'AND d.message_id=?' : ''}
-    ORDER BY m.rowid DESC LIMIT 1`).get(...(id ? [user, beforeId, id] : [user, beforeId])) as { message_id: string; analysis_json: string; review_json: string; status: string } | undefined;
+    JOIN messages current ON current.id=? WHERE m.user_id=? AND
+    (m.received_at<current.received_at OR (m.received_at=current.received_at AND m.rowid<current.rowid)) ${id ? 'AND d.message_id=?' : ''}
+    ORDER BY m.received_at DESC,m.rowid DESC LIMIT 1`).get(...(id ? [beforeId, user, id] : [beforeId, user])) as { message_id: string; analysis_json: string; review_json: string; status: string } | undefined;
   const record = (message?.reply_to && read(message.reply_to)) || read();
   return record ? { message_id: record.message_id, analysis: imageAnalysisSchema.parse(JSON.parse(record.analysis_json)), rows: JSON.parse(record.review_json) as Row[], status: record.status } : undefined;
 }

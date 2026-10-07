@@ -51,7 +51,7 @@ export async function buildServer(db = openDb(), options: { configDir?: string; 
   const filters = (query: unknown) => z.object({ start: dateSchema.optional(), end: dateSchema.optional(), kind: z.string().optional(), category: z.string().optional(), q: z.string().max(200).optional(), includeCancelled: z.enum(['true', 'false']).optional() }).parse(query);
   const setupData = options.configDir || dataDir, fixedStorage = options.fixedStorage ?? !!process.env.LEDGER_DATA_DIR;
   let settingUp = false;
-  app.get('/api/bootstrap', async () => ({ csrf, product: 'record-money', version: '0.6.0', pid: process.pid, today: today(), setupRequired: needsSetup(modelConfig) }));
+  app.get('/api/bootstrap', async () => ({ csrf, product: 'record-money', version: '0.6.1', pid: process.pid, today: today(), setupRequired: needsSetup(modelConfig) }));
   app.get('/api/setup', async () => ({ required: needsSetup(modelConfig), storage: dirname(setupData), fixedStorage,
     channel: modelConfig.channel, aiMode: modelConfig.aiMode==='fixed'?'fixed':modelConfig.aiKey?'ai':'fixed', apiType:modelConfig.apiType,
     canChooseFolder: !!process.env.LEDGER_DIRECTORY_PICKER, appId: modelConfig.appId, baseUrl: modelConfig.aiBaseUrl,

@@ -207,7 +207,9 @@ async function processNextMessage(db: DB, id: string) {
     if (/^(可以(的)?(就这样)?|好的?(就这样)?|就这样|确认|确认入账|确认执行|同意)$/.test(normalized)) return applyActions(db, id, [{ type: 'confirm_pending' }]);
     if (/^(取消(这个方案)?|不用了|不同意|先不执行)$/.test(normalized)) return applyActions(db, id, [{ type: 'dismiss_pending' }]);
   } else if (/^(可以(的)?(就这样)?|好的?(就这样)?|就这样|确认|确认执行|同意)$/.test(normalized)) {
-    const latest = db.prepare("SELECT id FROM messages WHERE user_id=? AND status='done' AND rowid<(SELECT rowid FROM messages WHERE id=?) ORDER BY rowid DESC LIMIT 1").get(message.user_id, id) as { id: string } | undefined;
+    const latest = db.prepare(`SELECT m.id FROM messages m JOIN messages current ON current.id=? WHERE m.user_id=? AND m.status='done'
+      AND (m.received_at<current.received_at OR (m.received_at=current.received_at AND m.rowid<current.rowid))
+      ORDER BY m.received_at DESC,m.rowid DESC LIMIT 1`).get(id, message.user_id) as { id: string } | undefined;
     if (latest && db.prepare('SELECT id FROM dialogue_pending WHERE message_id=? AND user_id=?').get(latest.id, message.user_id)) return applyActions(db, id, [{ type: 'confirm_pending' }]);
   }
   const draft = latestImageDraft(db,message.user_id,id);
@@ -249,7 +251,9 @@ export function protectImageActions(db:DB,id:string,user:string,text:string,acti
   }
   if(!/图片|截图|这张|上图|图里|图中|^(?:帮我|请)?(?:记一下|记进去|记下来|入账|保存到账本)/.test(text))return actions;
   const source=db.prepare(`SELECT i.message_id FROM message_images i JOIN messages m ON m.id=i.message_id
-    WHERE m.user_id=? AND m.rowid<(SELECT rowid FROM messages WHERE id=?) ORDER BY m.rowid DESC LIMIT 1`).get(user,id) as {message_id:string}|undefined;
+    JOIN messages current ON current.id=? WHERE m.user_id=? AND
+    (m.received_at<current.received_at OR (m.received_at=current.received_at AND m.rowid<current.rowid))
+    ORDER BY m.received_at DESC,m.rowid DESC LIMIT 1`).get(id,user) as {message_id:string}|undefined;
   if(!source)return actions;
   const mutations=new Set(['add','refund','update','cancel','account_create','account_update','possession_create','possession_update','loan_create','loan_update','loan_draw','loan_repay','loan_installment']);
   const writes=actions.some(a=>mutations.has(a.type)||(a.type==='propose'&&a.actions.some(p=>mutations.has(p.type))));

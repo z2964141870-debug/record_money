@@ -29,6 +29,8 @@ try {
   writeFileSync(join(payload, 'NODE-LICENSE.txt'), await nodeLicense.text());
   execFileSync('swiftc', ['-swift-version', '5', '-target', `${process.arch === 'arm64' ? 'arm64' : 'x86_64'}-apple-macos14.0`, '-O', join(root, 'script/desktop/Launcher.swift'), '-o', join(contents, 'MacOS/RecordMoney')], { stdio: 'inherit' });
   cpSync(join(contents, 'MacOS/RecordMoney'), join(payload, 'bin/launcher'));
+  execFileSync('swiftc', ['-swift-version', '5', '-target', `${process.arch === 'arm64' ? 'arm64' : 'x86_64'}-apple-macos14.0`, '-O', join(root, 'script/desktop/WakeMonitor.swift'), '-o', join(payload, 'bin/wake-monitor')], { stdio: 'inherit' });
+  if (execFileSync(join(payload, 'bin/wake-monitor'), ['--self-test'], { encoding: 'utf8', timeout: 10000 }).trim() !== 'wake') throw new Error('Mac唤醒监听验收失败');
   writeFileSync(join(contents, 'Info.plist'), `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>local.record-money.desktop</string><key>CFBundleExecutable</key><string>RecordMoney</string><key>CFBundleName</key><string>私人记账助手</string><key>CFBundleIconFile</key><string>AppIcon</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>${version}</string><key>CFBundleVersion</key><string>${version}</string><key>LSMinimumSystemVersion</key><string>14.0</string><key>LSUIElement</key><true/></dict></plist>`);
   const icons = join(temp, 'AppIcon.iconset'); mkdirSync(icons);
   for (const size of [16, 32, 128, 256, 512]) for (const scale of [1, 2]) {
