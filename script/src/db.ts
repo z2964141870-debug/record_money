@@ -89,6 +89,7 @@ export function openDb(path = join(dataDir, 'ledger.sqlite')) {
   for (const column of ['image_path', 'image_key']) if (!outboxColumns.has(column)) db.exec(`ALTER TABLE outbox ADD COLUMN ${column} TEXT`);
   if(!(db.pragma('table_info(dialogue_pending)') as {name:string}[]).some(c=>c.name==='source_image_id'))db.exec('ALTER TABLE dialogue_pending ADD COLUMN source_image_id TEXT');
   if(!(db.pragma('table_info(message_images)') as {name:string}[]).some(c=>c.name==='content_hash'))db.exec('ALTER TABLE message_images ADD COLUMN content_hash TEXT');
+  if (!(db.pragma('table_info(fund_snapshots)') as {name:string}[]).some(c => c.name === 'details_json')) db.exec("ALTER TABLE fund_snapshots ADD COLUMN details_json TEXT NOT NULL DEFAULT '{}'");
   const confirmationSchema = db.prepare("SELECT sql FROM sqlite_master WHERE name='confirmations'").get() as { sql: string };
   if (confirmationSchema.sql.includes('message_id TEXT UNIQUE')) {
     db.transaction(() => db.exec(`

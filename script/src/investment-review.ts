@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { type DB, setting, setSetting } from './db.js';
 import { today, money } from './ledger.js';
 import { fundOverview, refreshFunds } from './funds.js';
-import { snapshotOverview } from './fund-snapshots.js';
+import { snapshotOverview, confirmedSnapshotValue, snapshotDetailText } from './fund-snapshots.js';
 import { accountOverview } from './accounts.js';
 import { fetchReference, freshReference, type ReferenceQuote } from './fund-market.js';
 import { modelRequest, modelRuntime } from './model-api.js';
@@ -26,11 +26,10 @@ export function reviewSettings(db: DB) { return { enabled: setting(db, 'investme
   budget: setting(db, 'investment_budget') === '' ? null : Number(setting(db, 'investment_budget')) }; }
 export function investmentBudget(db: DB, now = new Date()) {
   const funds = fundOverview(db, now), pool = snapshotOverview(db), limit = reviewSettings(db).budget;
-  const pending = pool.snapshots.reduce((n, s) => n + s.pending_amount, 0), held = funds.value + pool.value;
-  // Pending orders may already be included in screenshots; reserve them until confirmed.
+  const pending = pool.snapshots.reduce((n, s) => n + s.pending_amount, 0), held = funds.value + pool.confirmed_value;
   const remaining = limit === null ? null : Math.max(0, limit - held - pending);
   return { limit, held, pending, remaining, over: limit === null ? 0 : Math.max(0, held + pending - limit),
-    unknown: funds.unknown > 0, basis: '登记市值占用预算；待确认申购额另预留，不是平台可用余额' };
+    unknown: funds.unknown > 0, basis: '持有金额与待确认金额分别占用预算，不重复计算；余量不是平台可用余额' };
 }
 export function investmentReviews(db: DB) { return { settings: reviewSettings(db), budget: investmentBudget(db), reports: (db.prepare('SELECT * FROM investment_reviews ORDER BY day DESC LIMIT 30').all() as (InvestmentReview & { analysis_json: string | null; evidence_json: string })[]).map(({ analysis_json, evidence_json, ...r }) => {
     const analysis = analysis_json ? JSON.parse(analysis_json) : null, evidence = JSON.parse(evidence_json) as Evidence;
@@ -70,8 +69,8 @@ export function buildReviewEvidence(db: DB, now: Date, market?: ReferenceQuote):
     if (p.reference) facts.push({ id: 'etf:' + p.id, text: `${p.reference.name}参考涨跌 ${p.referenceChange!.toFixed(2)}% · ${time(p.reference.quoted_at)}${p.referenceFresh ? '' : ' · 已过期'} · 不是该基金估值` });
   }
   for (const s of pool.snapshots.filter(s => !s.position_id)) {
-    const id = 'snapshot:' + s.id; targets.push(id); targetLabels[id] = s.name; rows.push({ id, value: s.value }); missing = true;
-    facts.push({ id, text: `${s.name}${s.code ? ' ' + s.code : ''} · ${s.platform} · 截图金额 ${money(s.value)}元 · 截图持有收益 ${money(s.holding_profit)}元 · 截图日期 ${s.as_of || '待确认'} · 份额未知${s.pending_amount ? ' · 申购中 ' + money(s.pending_amount) + '元（是否已含在截图金额中待确认）' : ''}` });
+    const id = 'snapshot:' + s.id; targets.push(id); targetLabels[id] = s.name; rows.push({ id, value: confirmedSnapshotValue(s) }); missing = true;
+    facts.push({ id, text: `${s.name}${s.code ? ' ' + s.code : ''} · ${s.platform} · 截图总金额 ${money(s.value)}元 · 持有金额 ${money(confirmedSnapshotValue(s))}元 · 截图持有收益 ${money(s.holding_profit)}元 · 截图日期 ${s.as_of || '待确认'}${snapshotDetailText(s)}${s.pending_amount ? ' · 申购中 ' + money(s.pending_amount) + '元（' + (s.details.pending_included === true ? '已含在截图总金额中' : s.details.pending_included === false ? '未含在截图总金额中' : '是否已含在截图金额中待确认') + '）' : ''} · 总成本及申赎费用未核实，不能作为已成交交易` });
     if (s.code) {
       const quotes = db.prepare('SELECT date,nav,source FROM fund_quotes WHERE code=? ORDER BY date DESC LIMIT 2').all(s.code) as { date: string; nav: number; source: string }[], q = quotes[0], previous = quotes[1];
       if (q) facts.push({ id: 'nav:' + s.id, text: `${s.name} 公布净值 ${(q.nav / 1e6).toFixed(4)} · ${q.date}${previous ? ' · 较' + previous.date + '变动 ' + ((q.nav - previous.nav) / previous.nav * 100).toFixed(2) + '%' : ''} · ${q.source}（不能据此重算截图金额）` });
