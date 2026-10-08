@@ -22,7 +22,7 @@ try {
   // Install only production dependencies into a fresh bundle, never copy the working tree or data.
   execFileSync('npm', ['ci', '--omit=dev'], { cwd: join(payload, 'script'), stdio: 'inherit' });
   mkdirSync(join(payload, 'script/tools')); cpSync(join(root, 'script/tools/run.sh'), join(payload, 'script/tools/run.sh'));
-  mkdirSync(join(payload, 'reports')); for (const name of ['README.md', 'FEISHU.md', 'DINGTALK.md', 'DISTRIBUTION.md', 'MODELS.md', 'MODEL_EVALUATION.md', 'CHANGELOG.md', 'FUNDS.md']) cpSync(join(root, 'reports', name), join(payload, 'reports', name));
+  mkdirSync(join(payload, 'reports')); for (const name of ['README.md', 'FEISHU.md', 'DINGTALK.md', 'DISTRIBUTION.md', 'MODELS.md', 'MODEL_EVALUATION.md', 'CHANGELOG.md', 'FUNDS.md', 'INVESTMENT_REVIEW.md']) cpSync(join(root, 'reports', name), join(payload, 'reports', name));
   cpSync(join(root, 'LICENSE'), join(payload, 'LICENSE')); cpSync(process.execPath, join(payload, 'bin/node'));
   const nodeLicense = await fetch(`https://raw.githubusercontent.com/nodejs/node/${process.version}/LICENSE`, { signal: AbortSignal.timeout(30000) });
   if (!nodeLicense.ok) throw new Error('无法取得Node发行版许可证，安装包未生成');

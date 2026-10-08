@@ -125,7 +125,8 @@ export async function refreshFunds(db: DB, options: { fetcher?: typeof fetch; no
   const existing = refreshing.get(db); if (existing) return existing;
   const task = (async () => {
     const list = positions(db), now = options.now || new Date();
-    for (const code of new Set(list.map(p => p.code))) {
+    const snapshots = db.prepare("SELECT code FROM fund_snapshots WHERE code<>'' AND position_id IS NULL").all() as {code:string}[];
+    for (const code of new Set([...list, ...snapshots].map(p => p.code))) {
       if (options.signal?.aborted) return;
       try { const quotes = await fetchNav(code, options.fetcher, now, options.signal); if (options.signal?.aborted) return;
         db.transaction(() => { for (const q of quotes) db.prepare('INSERT INTO fund_quotes(code,date,nav,source,fetched_at) VALUES(@code,@date,@nav,@source,@fetched_at) ON CONFLICT(code,date) DO UPDATE SET nav=excluded.nav,source=excluded.source,fetched_at=excluded.fetched_at').run(q);
@@ -140,7 +141,7 @@ export async function refreshFunds(db: DB, options: { fetcher?: typeof fetch; no
         setSetting(db, 'fund_reference_error:' + symbol, '');
       } catch { if (options.signal?.aborted) return; setSetting(db, 'fund_reference_error:' + symbol, 'ETF参考更新失败'); }
     }
-    if (list.length) setSetting(db, 'fund_last_refresh', now.toISOString());
+    if (list.length || snapshots.length) setSetting(db, 'fund_last_refresh', now.toISOString());
   })();
   refreshing.set(db, task); try { await task; } finally { refreshing.delete(db); }
 }

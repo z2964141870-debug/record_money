@@ -6,6 +6,7 @@ import { findPossession, savePossession, possessionText } from './possessions.js
 import { getLoan, saveLoan, drawLoan, repayLoan, loanText, saveInstallment } from './loans.js';
 import { createChart } from './charts.js';
 import { saveFund, recordFundTrade, findFund, fundText, getFund } from './funds.js';
+import { holdingText } from './fund-snapshots.js';
 import { fundCode, benchmarkCode } from './fund-market.js';
 const amount=z.string().regex(/^\d+(\.\d{1,2})?$/);
 const name=z.string().min(1).max(100);
@@ -36,7 +37,7 @@ export function applyDomain(db:DB,action:DomainAction,message:{id:string;user_id
       recordFundTrade(db,findFund(db,action.code,action.platform).id,{...action,shares:action.shares||'0',amount:decimalCents(action.amount),fee:decimalCents(action.fee||'0'),cash_account_id:action.cash_account?findAccount(db,action.cash_account).id:null},message.id);
       return `基金${({buy:'申购',sell:'赎回',dividend:'现金分红'})[action.kind]}已记录${action.cash_account?'，现金账户已同步':'；未指定现金账户，未修改现金余额'}。\n`+fundText(db,action.code,undefined,action.platform);
     }
-    case 'funds_query':return fundText(db,action.code,undefined,action.platform);
+    case 'funds_query':return holdingText(db,action.code,action.platform);
     case 'possession_create':case 'possession_update': {
       const before=action.type==='possession_update'?findPossession(db,action.name):null;
       savePossession(db,{...before,...action,price:action.price===undefined?before?.price??null:action.price===null?null:decimalCents(action.price),purchased_on:action.purchased_on===undefined?before?.purchased_on??null:action.purchased_on},before?.id);

@@ -14,6 +14,8 @@ import { config } from './config.js';
 import { fixedCommands, fixedHint, CommandError } from './fixed-commands.js';
 import { modelCapabilities, modelRuntime, ModelFailure } from './model-api.js';
 import { refreshFunds, fundText } from './funds.js';
+import { holdingText } from './fund-snapshots.js';
+import { generateReview, investmentReviews } from './investment-review.js';
 export function queueReply(db: DB, user: string, text: string, dedup: string) {
   db.prepare('INSERT OR IGNORE INTO outbox(user_id,text,dedup,created_at) VALUES(?,?,?,?)').run(user, text, dedup, new Date().toISOString());
 }
@@ -203,10 +205,15 @@ async function processNextMessage(db: DB, id: string) {
     return applyActions(db,id,[reviewed.proposal||{type:'reply',text:reviewed.text}]);
   }
   const normalized = message.text.trim().replace(/[，。！？!?,.\s]/g, '');
+  if (/^(理财建议|理财分析|分析基金|分析持仓|今天怎么理财|重新分析基金)$/.test(normalized)) {
+    const previous = investmentReviews(db).reports[0];
+    const report = normalized !== '重新分析基金' && previous?.day === today() && previous.status !== 'running' ? previous : await generateReview(db);
+    return applyActions(db,id,[{type:'reply',text:report.text}]);
+  }
   const fundQuery = message.text.trim().match(/^(?:基金收益|基金持仓|查看基金|基金涨跌)(?:\s+(\d{6}))?$/);
   if (fundQuery) {
     await refreshFunds(db);
-    return applyActions(db,id,[{type:'reply',text:fundText(db,fundQuery[1])}]);
+    return applyActions(db,id,[{type:'reply',text:holdingText(db,fundQuery[1])}]);
   }
   if (['今天没有收支', '今天无收支', '今天不用提醒'].includes(normalized)) return applyActions(db, id, [{ type: 'no_activity' }]);
   if (pendingDialogue(db, message.user_id)) {

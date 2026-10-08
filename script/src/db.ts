@@ -71,6 +71,15 @@ export function openDb(path = join(dataDir, 'ledger.sqlite')) {
       previous_close INTEGER NOT NULL, quoted_at TEXT NOT NULL, fetched_at TEXT NOT NULL, source TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS fund_audit (id INTEGER PRIMARY KEY, position_id INTEGER NOT NULL,
       action TEXT NOT NULL, detail_json TEXT NOT NULL, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS fund_snapshots (id INTEGER PRIMARY KEY, name TEXT NOT NULL, platform TEXT NOT NULL,
+      code TEXT NOT NULL DEFAULT '', value INTEGER NOT NULL, holding_profit INTEGER NOT NULL,
+      pending_amount INTEGER NOT NULL DEFAULT 0, as_of TEXT, source TEXT NOT NULL, note TEXT NOT NULL DEFAULT '',
+      position_id INTEGER UNIQUE REFERENCES fund_positions(id), created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+      UNIQUE(name,platform));
+    CREATE TABLE IF NOT EXISTS fund_snapshot_batches (digest TEXT PRIMARY KEY, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS investment_reviews (id INTEGER PRIMARY KEY, day TEXT UNIQUE NOT NULL,
+      status TEXT NOT NULL, evidence_json TEXT NOT NULL, analysis_json TEXT, text TEXT NOT NULL DEFAULT '',
+      model TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
   `);
   const entryColumns = new Set((db.pragma('table_info(entries)') as { name: string }[]).map(c => c.name));
   for (const column of ['account_id', 'to_account_id']) {

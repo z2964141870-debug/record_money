@@ -47,9 +47,13 @@ try {
   assert.equal(buy.shares,110000);assert.equal(buy.profit,200);
   await call(`/funds/${fund.id}/trades/${buy.trades[0].id}/cancel`,{});
   assert.equal((await call('/funds')).funds[0].value,1200);
+  await call('/funds/snapshots',{name:'快照验收',platform:'验收',value:2100,holding_profit:-200,pending_amount:1000});
+  assert.equal((await call('/funds')).snapshots.value,2100);
+  assert.equal((await call('/investment-reviews')).settings.time,'14:30');
   const csv=await fetch(url+'/api/export');assert.equal(csv.status,200);assert.match(await csv.text(),/固定格式验收/);
   await call('/backup',{});
   const before=await call('/entries');
   if(!external){await stop();await start();boot=await bootstrap();assert.deepEqual(await call('/entries'),before);assert.equal((await call('/possessions')).length,1);assert.equal((await call('/loans')).loans.some((l:{name:string})=>l.name==='验收贷款'),true);assert.equal((await call('/accounts')).accounts.some((a:{name:string;balance:number})=>a.name==='验收现金'&&a.balance===12345),true);assert.equal((await call('/funds')).funds[0].shares,100000);}
+  assert.equal((await call('/funds')).snapshots.snapshots.length,1);
   console.log(JSON.stringify({passed:true,url,mode:'fixed',modelConfigured:false,charts:3,entries:before.length,restarted:!external}));
 }finally{await stop();}

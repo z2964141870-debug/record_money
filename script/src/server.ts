@@ -27,6 +27,8 @@ import { dirname } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fundOverview, saveFund, recordFundTrade, cancelFundTrade, refreshFunds, saveManualNav, saveFundReminder, startFundService } from './funds.js';
+import { snapshotOverview, saveSnapshot, importSnapshots, completeSnapshot } from './fund-snapshots.js';
+import { investmentReviews, saveReviewSettings, generateReview, startInvestmentService } from './investment-review.js';
 export async function buildServer(db = openDb(), options: { configDir?: string; runtimeConfig?: typeof config; modelCheck?: typeof checkConnections; setupRoot?: string; fixedStorage?: boolean; restart?: () => void } = {}) {
   const modelConfig = options.runtimeConfig || config;
   initializeAccounts(db);
@@ -52,7 +54,7 @@ export async function buildServer(db = openDb(), options: { configDir?: string; 
   const filters = (query: unknown) => z.object({ start: dateSchema.optional(), end: dateSchema.optional(), kind: z.string().optional(), category: z.string().optional(), q: z.string().max(200).optional(), includeCancelled: z.enum(['true', 'false']).optional() }).parse(query);
   const setupData = options.configDir || dataDir, fixedStorage = options.fixedStorage ?? !!process.env.LEDGER_DATA_DIR;
   let settingUp = false;
-  app.get('/api/bootstrap', async () => ({ csrf, product: 'record-money', version: '0.7.0', pid: process.pid, today: today(), setupRequired: needsSetup(modelConfig) }));
+  app.get('/api/bootstrap', async () => ({ csrf, product: 'record-money', version: '0.8.0', pid: process.pid, today: today(), setupRequired: needsSetup(modelConfig) }));
   app.get('/api/setup', async () => ({ required: needsSetup(modelConfig), storage: dirname(setupData), fixedStorage,
     channel: modelConfig.channel, aiMode: modelConfig.aiMode==='fixed'?'fixed':modelConfig.aiKey?'ai':'fixed', apiType:modelConfig.apiType,
     canChooseFolder: !!process.env.LEDGER_DIRECTORY_PICKER, appId: modelConfig.appId, baseUrl: modelConfig.aiBaseUrl,
@@ -103,7 +105,14 @@ export async function buildServer(db = openDb(), options: { configDir?: string; 
     try{return {result:await processMessage(db,id)};}catch(error){const detail=error instanceof ModelFailure?error.message:'图片清单识别失败';db.prepare("UPDATE messages SET status='needs_attention',error=? WHERE id=?").run(detail,id);throw new Error(detail+'；图片已保存，尚未入账，可在运行状态重试');}
   });
   app.get('/api/accounts', async () => accountOverview(db));
-  app.get('/api/funds', async () => fundOverview(db));
+  app.get('/api/funds', async () => ({...fundOverview(db), snapshots: snapshotOverview(db)}));
+  app.post('/api/funds/snapshots', async req => saveSnapshot(db, req.body));
+  app.post('/api/funds/snapshots/import', async req => importSnapshots(db, req.body));
+  app.put<{ Params: { id: string } }>('/api/funds/snapshots/:id', async req => saveSnapshot(db, req.body, z.coerce.number().int().positive().parse(req.params.id)));
+  app.post<{ Params: { id: string } }>('/api/funds/snapshots/:id/complete', async req => completeSnapshot(db, z.coerce.number().int().positive().parse(req.params.id), req.body));
+  app.get('/api/investment-reviews', async () => investmentReviews(db));
+  app.put('/api/investment-reviews/settings', async req => saveReviewSettings(db, req.body));
+  app.post('/api/investment-reviews/generate', async () => generateReview(db));
   app.post('/api/funds', async req => saveFund(db, req.body));
   app.put<{ Params: { id: string } }>('/api/funds/:id', async req => saveFund(db, req.body, z.coerce.number().int().positive().parse(req.params.id)));
   app.post('/api/funds/refresh', async () => { await refreshFunds(db); return fundOverview(db); });
@@ -184,11 +193,13 @@ export async function buildServer(db = openDb(), options: { configDir?: string; 
   }
   let timer: NodeJS.Timeout | undefined;
   let stopFunds: (() => Promise<void>) | undefined;
-  app.addHook('onClose', async () => { if (timer) clearInterval(timer); bot.stop(); await stopFunds?.(); db.close(); });
+  let stopInvestments: (() => Promise<void>) | undefined;
+  app.addHook('onClose', async () => { if (timer) clearInterval(timer); bot.stop(); await stopInvestments?.(); await stopFunds?.(); db.close(); });
   const startBackground = () => {
     if (needsSetup(modelConfig)) return;
     void bot.start();
     stopFunds = startFundService(db);
+    stopInvestments = startInvestmentService(db);
     let ticking = false;
     const tick = async () => { if (ticking) return; ticking = true; try { runReminder(db); runSchedule(db); runOperationRecords(db); await backup(db); } catch { app.log.warn('Periodic task failed; check local storage'); } finally { ticking = false; } };
     void tick(); timer = setInterval(() => { void tick(); }, 60000); timer.unref();

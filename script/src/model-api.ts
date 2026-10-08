@@ -63,6 +63,8 @@ export async function modelRequest(runtime:ModelRuntime, request:Request, option
     }
     const input:OpenAI.Responses.ResponseInput=request.input.map((m,index)=>request.image&&index===request.input.length-1
       ?{role:'user',content:[{type:'input_text',text:m.content},{type:'input_image',image_url:request.image,detail:'high'}]}:m);
+    // Some compatible gateways validate JSON mode against input, excluding instructions.
+    if(request.json!==false&&!request.input.some(m=>/json/i.test(m.content)))input.unshift({role:'system',content:'请严格输出 JSON。'});
     const response=await client.responses.create({model:runtime.model,instructions:request.instructions,input,
       reasoning:{effort:runtime.reasoning as 'none'|'low'|'medium'|'high'},
       ...(request.json!==false?{text:{format:{type:'json_object' as const}}}:{}),max_output_tokens:request.maxTokens,store:false});
