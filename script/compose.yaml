@@ -1,6 +1,6 @@
 services:
   ledger:
-    image: ghcr.io/z2964141870-debug/record_money:0.8.1
+    image: ghcr.io/z2964141870-debug/record_money:0.8.2
     restart: unless-stopped
     init: true
     environment:

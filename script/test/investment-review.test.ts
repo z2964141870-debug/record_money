@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { openDb, setSetting } from '../src/db.js';
 import { importSnapshots, saveSnapshot, snapshotOverview, completeSnapshot, holdingText } from '../src/fund-snapshots.js';
 import { saveFund, saveManualNav, saveFundReminder } from '../src/funds.js';
@@ -139,7 +140,9 @@ test('concurrent generation calls one model and a mid-generation ledger change y
 test('snapshot and review API require CSRF and preserve the original configuration', async () => {
   const db = openDb(':memory:'), { app } = await buildServer(db), headers = { host: '127.0.0.1:' + config.port };
   try {
-    const token = (await app.inject({ url: '/api/bootstrap', headers })).json().csrf, auth = { ...headers, 'x-ledger-token': token };
+    const bootstrap = (await app.inject({ url: '/api/bootstrap', headers })).json();
+    assert.equal(bootstrap.version,JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')).version);
+    const token = bootstrap.csrf, auth = { ...headers, 'x-ledger-token': token };
     assert.equal((await app.inject({ method: 'POST', url: '/api/funds/snapshots/import', headers, payload: [row] })).statusCode, 403);
     assert.equal((await app.inject({ method: 'POST', url: '/api/funds/snapshots/import', headers: auth, payload: [row] })).statusCode, 200);
     assert.equal((await app.inject({ url: '/api/funds', headers })).json().snapshots.snapshots.length, 1);
