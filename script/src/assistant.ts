@@ -207,8 +207,9 @@ async function processNextMessage(db: DB, id: string) {
   const normalized = message.text.trim().replace(/[，。！？!?,.\s]/g, '');
   if (/^(理财建议|理财分析|分析基金|分析持仓|今天怎么理财|重新分析基金)$/.test(normalized)) {
     const previous = investmentReviews(db).reports[0];
-    const report = normalized !== '重新分析基金' && previous?.day === today() && previous.status !== 'running' ? previous : await generateReview(db);
-    return applyActions(db,id,[{type:'reply',text:report.text}]);
+    const report = normalized !== '重新分析基金' && previous?.day === today() && previous.current && previous.status !== 'running' && Date.now() - Date.parse(previous.updated_at) < 15 * 60000 ? previous : await generateReview(db);
+    const result = investmentReviews(db).reports.find(r => r.id === report.id)!;
+    return applyActions(db,id,[{type:'reply',text:result.day + ' 理财分析\n' + result.compact}]);
   }
   const fundQuery = message.text.trim().match(/^(?:基金收益|基金持仓|查看基金|基金涨跌)(?:\s+(\d{6}))?$/);
   if (fundQuery) {
