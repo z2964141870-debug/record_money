@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 
 const allowed = ['README.md', 'LICENSE', '.gitignore', '.dockerignore', '.github/workflows/release.yml', '.github/workflows/windows.yml',
-  'reports/README.md', 'reports/FEISHU.md', 'reports/DINGTALK.md', 'reports/RELEASE.md', 'reports/DISTRIBUTION.md', 'reports/MODELS.md', 'reports/MODEL_EVALUATION.md', 'reports/CHANGELOG.md',
+  'reports/README.md', 'reports/FEISHU.md', 'reports/DINGTALK.md', 'reports/RELEASE.md', 'reports/DISTRIBUTION.md', 'reports/MODELS.md', 'reports/MODEL_EVALUATION.md', 'reports/CHANGELOG.md', 'reports/FUNDS.md',
   'script/package.json', 'script/package-lock.json', 'script/config.example.env', 'script/tsconfig.json', 'script/tsconfig.server.json',
   'script/vite.config.ts', 'script/Dockerfile', 'script/compose.yaml', 'script/desktop', 'script/src', 'script/web', 'script/test', 'script/tools'];
 export function packageFiles(root: string) {

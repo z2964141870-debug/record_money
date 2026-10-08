@@ -57,6 +57,20 @@ export function openDb(path = join(dataDir, 'ledger.sqlite')) {
     CREATE TABLE IF NOT EXISTS image_drafts (message_id TEXT PRIMARY KEY REFERENCES message_images(message_id), analysis_json TEXT NOT NULL,
       review_json TEXT NOT NULL, status TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS chart_files (id TEXT PRIMARY KEY, message_id TEXT, kind TEXT NOT NULL, path TEXT NOT NULL, snapshot_json TEXT NOT NULL, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS fund_positions (id INTEGER PRIMARY KEY, account_id INTEGER UNIQUE NOT NULL REFERENCES accounts(id),
+      code TEXT NOT NULL, name TEXT NOT NULL, platform TEXT NOT NULL DEFAULT '', opening_shares INTEGER NOT NULL,
+      opening_cost INTEGER NOT NULL, opening_date TEXT NOT NULL, benchmark TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(code,platform));
+    CREATE TABLE IF NOT EXISTS fund_trades (id INTEGER PRIMARY KEY, position_id INTEGER NOT NULL REFERENCES fund_positions(id),
+      kind TEXT NOT NULL CHECK(kind IN ('buy','sell','dividend')), shares INTEGER NOT NULL, amount INTEGER NOT NULL,
+      fee INTEGER NOT NULL DEFAULT 0, date TEXT NOT NULL, cash_account_id INTEGER REFERENCES accounts(id), entry_id INTEGER REFERENCES entries(id),
+      message_id TEXT, note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, cancelled_at TEXT);
+    CREATE TABLE IF NOT EXISTS fund_quotes (code TEXT NOT NULL, date TEXT NOT NULL, nav INTEGER NOT NULL, source TEXT NOT NULL,
+      fetched_at TEXT NOT NULL, PRIMARY KEY(code,date));
+    CREATE TABLE IF NOT EXISTS fund_references (symbol TEXT PRIMARY KEY, name TEXT NOT NULL, price INTEGER NOT NULL,
+      previous_close INTEGER NOT NULL, quoted_at TEXT NOT NULL, fetched_at TEXT NOT NULL, source TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS fund_audit (id INTEGER PRIMARY KEY, position_id INTEGER NOT NULL,
+      action TEXT NOT NULL, detail_json TEXT NOT NULL, created_at TEXT NOT NULL);
   `);
   const entryColumns = new Set((db.pragma('table_info(entries)') as { name: string }[]).map(c => c.name));
   for (const column of ['account_id', 'to_account_id']) {

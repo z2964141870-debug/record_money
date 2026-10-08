@@ -7,7 +7,8 @@ export function ledgerRevision(db: DB) {
   return JSON.stringify(db.prepare(`SELECT (SELECT COALESCE(MAX(id),0) FROM audit) AS ledger,
     (SELECT COALESCE(MAX(id),0) FROM account_audit) AS accounts,
     (SELECT COALESCE(MAX(id),0) FROM inventory_audit) AS inventory,
-    (SELECT COALESCE(MAX(id),0) FROM loan_events) AS loans`).get());
+    (SELECT COALESCE(MAX(id),0) FROM loan_events) AS loans,
+    (SELECT COALESCE(MAX(id),0) FROM fund_audit) AS funds`).get());
 }
 export function conversationInput(db: DB, text: string, context?: { user: string; messageId: string }) {
   const input: { role: 'user' | 'assistant'; content: string }[] = [];
@@ -23,7 +24,7 @@ export function conversationInput(db: DB, text: string, context?: { user: string
     }
     const current = db.prepare('SELECT received_at FROM messages WHERE id=?').get(context.messageId) as { received_at: string };
     const proactive = db.prepare(`SELECT text FROM outbox WHERE user_id=? AND status='sent' AND created_at>? AND created_at<=?
-      AND (dedup LIKE 'reminder:%' OR dedup LIKE 'report:%') ORDER BY created_at DESC LIMIT 3`).all(context.user, rows.at(-1)?.received_at || '1970-01-01', current.received_at) as { text: string }[];
+      AND (dedup LIKE 'reminder:%' OR dedup LIKE 'report:%' OR dedup LIKE 'fund-reminder:%') ORDER BY created_at DESC LIMIT 3`).all(context.user, rows.at(-1)?.received_at || '1970-01-01', current.received_at) as { text: string }[];
     for (const message of proactive.reverse()) if(message.text.length<=6000)input.push({ role: 'assistant', content: message.text });
   }
   input.push({ role: 'user', content: text });

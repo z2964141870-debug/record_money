@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { type DB, setting, setSetting } from './db.js';
 import { dateSchema } from './ledger.js';
+import { fundAccountValue } from './fund-math.js';
 export const accountKind = z.enum(['cash', 'investment', 'locked', 'liability']);
 const accountInput = z.object({
   name: z.string().trim().min(1).max(100), platform: z.string().trim().max(60).default(''),
@@ -11,6 +12,8 @@ export type Account = { id: number; name: string; platform: string; kind: z.infe
 export function getAccount(db: DB, id: number): Account {
   const account = db.prepare('SELECT * FROM accounts WHERE id=?').get(id) as Account | undefined;
   if (!account) throw new Error('资金账户不存在');
+  const fund = fundAccountValue(db, id);
+  if (fund.managed) return { ...account, balance: fund.balance };
   const change = (db.prepare(`SELECT COALESCE(SUM(CASE
     WHEN account_id=? THEN CASE WHEN kind IN ('expense','transfer') THEN -amount ELSE amount END
     WHEN to_account_id=? AND kind='transfer' THEN amount ELSE 0 END),0) AS n
@@ -23,6 +26,7 @@ export function listAccounts(db: DB) {
 export function saveAccount(db: DB, raw: unknown, id?: number) {
   return db.transaction(() => {
     const value = accountInput.parse(raw), before = id ? getAccount(db, id) : null;
+    if (id && fundAccountValue(db, id).managed && (value.kind !== before!.kind || value.balance !== before!.balance || value.platform !== before!.platform)) throw new Error('关联基金的市值由份额和净值计算，请在基金栏目修改；平台不能从资金账户更换');
     if (before && before.kind !== value.kind) {
       const used = db.prepare('SELECT 1 FROM entries WHERE account_id=? OR to_account_id=? LIMIT 1').get(id, id);
       if (used) throw new Error('已有交易的账户不能更改类型，请新建账户');

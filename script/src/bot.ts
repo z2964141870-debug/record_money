@@ -12,6 +12,7 @@ import { createDingTalkTransport, DingTalkImageError, type DingMessage } from '.
 import { ModelFailure, modelCapabilities, modelRuntime } from './model-api.js';
 import { acceptFeishuMessage, decodeFeishuHistory, recoverFeishuHistory, HistoryFailure, type HistoryAPI } from './feishu-history.js';
 import { watchSystemWake } from './wake-monitor.js';
+import { cancelObsoleteFundReminders } from './funds.js';
 export type BotStatus = { state: string; lastReceived: string | null; lastSent: string | null; lastError: string | null;
   lastWake: string | null; recovery: { state: string; lastSynced: string | null; recovered: number; error: string | null } };
 export function acceptDingMessage(db: DB, message: DingMessage) {
@@ -157,6 +158,7 @@ export function createBot(db: DB, options: {
       }
       if (!config.feishuEnabled || (!client && !ding)) return;
       cancelObsoleteReminders(db);
+      cancelObsoleteFundReminders(db);
       const next = db.prepare("SELECT * FROM outbox WHERE status='pending' AND next_attempt<=? ORDER BY id LIMIT 1").get(Date.now()) as { id: number; user_id: string; text: string; attempts: number; image_path:string|null;image_key:string|null } | undefined;
       if (next && next.user_id === setting(db, 'owner')) {
         try {

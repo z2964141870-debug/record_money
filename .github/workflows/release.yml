@@ -32,7 +32,7 @@ jobs:
       - run: npm ci && npm test && npm run build && npm run release
         working-directory: script
       - run: cp script/compose.yaml data/releases/compose.yaml
-      - run: cp reports/FEISHU.md reports/DINGTALK.md data/releases/
+      - run: cp reports/FEISHU.md reports/DINGTALK.md reports/FUNDS.md data/releases/
       - uses: actions/upload-artifact@v4
         with:
           name: source

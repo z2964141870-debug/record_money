@@ -13,6 +13,7 @@ import { createImageDraft, latestImageDraft, reviewImageDraft, renderImageDraft,
 import { config } from './config.js';
 import { fixedCommands, fixedHint, CommandError } from './fixed-commands.js';
 import { modelCapabilities, modelRuntime, ModelFailure } from './model-api.js';
+import { refreshFunds, fundText } from './funds.js';
 export function queueReply(db: DB, user: string, text: string, dedup: string) {
   db.prepare('INSERT OR IGNORE INTO outbox(user_id,text,dedup,created_at) VALUES(?,?,?,?)').run(user, text, dedup, new Date().toISOString());
 }
@@ -202,6 +203,11 @@ async function processNextMessage(db: DB, id: string) {
     return applyActions(db,id,[reviewed.proposal||{type:'reply',text:reviewed.text}]);
   }
   const normalized = message.text.trim().replace(/[，。！？!?,.\s]/g, '');
+  const fundQuery = message.text.trim().match(/^(?:基金收益|基金持仓|查看基金|基金涨跌)(?:\s+(\d{6}))?$/);
+  if (fundQuery) {
+    await refreshFunds(db);
+    return applyActions(db,id,[{type:'reply',text:fundText(db,fundQuery[1])}]);
+  }
   if (['今天没有收支', '今天无收支', '今天不用提醒'].includes(normalized)) return applyActions(db, id, [{ type: 'no_activity' }]);
   if (pendingDialogue(db, message.user_id)) {
     if (/^(可以(的)?(就这样)?|好的?(就这样)?|就这样|确认|确认入账|确认执行|同意)$/.test(normalized)) return applyActions(db, id, [{ type: 'confirm_pending' }]);
@@ -255,7 +261,7 @@ export function protectImageActions(db:DB,id:string,user:string,text:string,acti
     (m.received_at<current.received_at OR (m.received_at=current.received_at AND m.rowid<current.rowid))
     ORDER BY m.received_at DESC,m.rowid DESC LIMIT 1`).get(id,user) as {message_id:string}|undefined;
   if(!source)return actions;
-  const mutations=new Set(['add','refund','update','cancel','account_create','account_update','possession_create','possession_update','loan_create','loan_update','loan_draw','loan_repay','loan_installment']);
+  const mutations=new Set(['add','refund','update','cancel','account_create','account_update','possession_create','possession_update','loan_create','loan_update','loan_draw','loan_repay','loan_installment','fund_create','fund_update','fund_trade']);
   const writes=actions.some(a=>mutations.has(a.type)||(a.type==='propose'&&a.actions.some(p=>mutations.has(p.type))));
   if(!writes)return actions;
   const draft=latestImageDraft(db,user,id);

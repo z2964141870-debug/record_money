@@ -64,15 +64,20 @@ function audit(db: DB, id: number, action: string, before: unknown, after: unkno
 export function createEntry(db: DB, raw: unknown, source = 'web', messageId: string | null = null): Entry {
   return db.transaction(() => {
     const value = inputSchema.parse(raw); validate(db, value);
+    if (source !== 'fund-trade') for (const account of [value.account_id, value.to_account_id]) {
+      if (account && db.prepare('SELECT 1 FROM fund_positions WHERE account_id=?').get(account)) throw new Error('关联基金的申购、赎回请在基金栏目记录，保证份额与现金同步');
+    }
     const now = new Date().toISOString();
     const result = db.prepare(`INSERT INTO entries(kind,amount,date,category,subcategory,merchant,note,parent_id,account_id,to_account_id,source,message_id,created_at,updated_at) VALUES(@kind,@amount,@date,@category,@subcategory,@merchant,@note,@parent_id,@account_id,@to_account_id,@source,@message_id,@created_at,@updated_at)`).run({ ...value, source, message_id: messageId, created_at: now, updated_at: now });
     const e = getEntry(db, Number(result.lastInsertRowid)); audit(db, e.id, 'create', null, e); return e;
   })();
 }
 export function updateEntry(db: DB, id: number, raw: unknown) {
+  if (db.prepare('SELECT 1 FROM fund_trades WHERE entry_id=?').get(id)) throw new Error('基金关联记录请在基金栏目撤销后重新记录');
   if(db.prepare('SELECT 1 FROM loan_events WHERE entry_id=? OR interest_entry_id=? LIMIT 1').get(id,id))throw new Error('关联借款或还款记录请先撤销，再重新记录，避免分期数据不同步');
   return db.transaction(() => {
     const before = getEntry(db, id), value = inputSchema.parse(raw); validate(db, value, id);
+    for (const account of [value.account_id, value.to_account_id]) if (account && db.prepare('SELECT 1 FROM fund_positions WHERE account_id=?').get(account)) throw new Error('请在基金栏目记录关联交易');
     db.prepare('UPDATE entries SET kind=@kind,amount=@amount,date=@date,category=@category,subcategory=@subcategory,merchant=@merchant,note=@note,parent_id=@parent_id,account_id=@account_id,to_account_id=@to_account_id,updated_at=@updated_at WHERE id=@id').run({ ...value, id, updated_at: new Date().toISOString() });
     const after = getEntry(db, id); audit(db, id, 'update', before, after); return after;
   })();
@@ -80,6 +85,7 @@ export function updateEntry(db: DB, id: number, raw: unknown) {
 export function cancelEntry(db: DB, id: number) {
   return db.transaction(() => {
     const before = getEntry(db, id);
+    if (db.prepare('SELECT 1 FROM fund_trades WHERE entry_id=?').get(id)) throw new Error('基金关联记录请在基金栏目撤销，份额与现金会一起恢复');
     if (refunded(db, id) > 0) throw new Error('请先撤销关联退款，再撤销原支出');
     db.prepare('UPDATE entries SET cancelled_at=?,updated_at=? WHERE id=?').run(new Date().toISOString(), new Date().toISOString(), id);
     audit(db, id, 'cancel', before, null);

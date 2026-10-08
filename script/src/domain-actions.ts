@@ -5,9 +5,14 @@ import { findAccount } from './accounts.js';
 import { findPossession, savePossession, possessionText } from './possessions.js';
 import { getLoan, saveLoan, drawLoan, repayLoan, loanText, saveInstallment } from './loans.js';
 import { createChart } from './charts.js';
+import { saveFund, recordFundTrade, findFund, fundText, getFund } from './funds.js';
+import { fundCode, benchmarkCode } from './fund-market.js';
 const amount=z.string().regex(/^\d+(\.\d{1,2})?$/);
 const name=z.string().min(1).max(100);
 export const domainSchema=z.union([
+  z.object({type:z.enum(['fund_create','fund_update']),code:fundCode,name:name.optional(),platform:z.string().max(60).optional(),shares:z.string().optional(),cost:amount.optional(),date:dateSchema.optional(),account:name.optional(),benchmark:z.union([benchmarkCode,z.literal('')]).optional(),note:z.string().max(1000).optional()}),
+  z.object({type:z.literal('fund_trade'),code:fundCode,platform:z.string().max(60).optional(),kind:z.enum(['buy','sell','dividend']),shares:z.string().optional(),amount,fee:amount.optional(),date:dateSchema,cash_account:name.optional(),note:z.string().max(1000).optional()}),
+  z.object({type:z.literal('funds_query'),code:fundCode.optional(),platform:z.string().max(60).optional()}),
   z.object({type:z.enum(['possession_create','possession_update']),name,category:z.string().max(30).optional(),price:amount.nullable().optional(),purchased_on:dateSchema.nullable().optional(),retired_on:dateSchema.nullable().optional(),note:z.string().max(1000).optional()}),
   z.object({type:z.literal('possessions_query'),name:name.optional()}),
   z.object({type:z.enum(['loan_create','loan_update']),name,balance:amount.nullable().optional(),category:z.enum(['student','monthly','personal','other']).optional(),creditor:name.optional(),repayment_start:dateSchema.nullable().optional(),monthly_payment:amount.nullable().optional(),due_day:z.number().int().min(1).max(31).nullable().optional(),maturity_date:dateSchema.nullable().optional(),annual_rate:z.string().nullable().optional(),subsidy_until:dateSchema.nullable().optional(),note:z.string().max(1000).optional()}),
@@ -20,6 +25,18 @@ export type DomainAction=z.infer<typeof domainSchema>;
 export function decimalCents(value:string) { return /^0(?:\.0{1,2})?$/.test(value) ? 0 : cents(value); }
 export function applyDomain(db:DB,action:DomainAction,message:{id:string;user_id:string}) {
   switch(action.type) {
+    case 'fund_create':case 'fund_update': {
+      const before=action.type==='fund_update'?getFund(db,findFund(db,action.code,action.platform).id):null;
+      if (!before && (!action.name || action.shares === undefined || action.cost === undefined || !action.date)) throw new Error('请补充基金名称、已确认份额、剩余持仓成本和期初日期；仅有买入金额不能推算份额');
+      saveFund(db,{code:action.code,name:action.name||before!.name,platform:action.platform??before?.platform??'',shares:action.shares??String(before!.opening_shares/10000),cost:action.cost===undefined?before!.opening_cost:decimalCents(action.cost),date:action.date||before!.opening_date,account_id:action.account?findAccount(db,action.account).id:before?.account_id,benchmark:action.benchmark??before?.benchmark??'',note:action.note??before?.note??''},before?.id);
+      return '基金持仓已保存，未再次扣款。\n'+fundText(db,action.code,undefined,action.platform??before?.platform??'');
+    }
+    case 'fund_trade': {
+      if(action.kind!=='dividend'&&!action.shares)throw new Error('请提供平台已确认的交易份额，不根据金额猜测份额');
+      recordFundTrade(db,findFund(db,action.code,action.platform).id,{...action,shares:action.shares||'0',amount:decimalCents(action.amount),fee:decimalCents(action.fee||'0'),cash_account_id:action.cash_account?findAccount(db,action.cash_account).id:null},message.id);
+      return `基金${({buy:'申购',sell:'赎回',dividend:'现金分红'})[action.kind]}已记录${action.cash_account?'，现金账户已同步':'；未指定现金账户，未修改现金余额'}。\n`+fundText(db,action.code,undefined,action.platform);
+    }
+    case 'funds_query':return fundText(db,action.code,undefined,action.platform);
     case 'possession_create':case 'possession_update': {
       const before=action.type==='possession_update'?findPossession(db,action.name):null;
       savePossession(db,{...before,...action,price:action.price===undefined?before?.price??null:action.price===null?null:decimalCents(action.price),purchased_on:action.purchased_on===undefined?before?.purchased_on??null:action.purchased_on},before?.id);

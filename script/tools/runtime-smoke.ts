@@ -41,9 +41,15 @@ try {
   await call('/loans',{name:'验收贷款',balance:2400000,category:'student'});
   await call('/accounts',{name:'验收现金',kind:'cash',balance:12345});
   assert.equal((await call('/accounts')).accounts.some((a:{name:string;balance:number})=>a.name==='验收现金'&&a.balance===12345),true);
+  const fund=await call('/funds',{code:'000001',name:'验收基金',platform:'验收',shares:'10',cost:1000,date:boot.today});
+  await call('/funds/000001/nav',{date:boot.today,nav:'1.2'});
+  const buy=await call('/funds/'+fund.id+'/trades',{kind:'buy',shares:'1',amount:120,date:boot.today});
+  assert.equal(buy.shares,110000);assert.equal(buy.profit,200);
+  await call(`/funds/${fund.id}/trades/${buy.trades[0].id}/cancel`,{});
+  assert.equal((await call('/funds')).funds[0].value,1200);
   const csv=await fetch(url+'/api/export');assert.equal(csv.status,200);assert.match(await csv.text(),/固定格式验收/);
   await call('/backup',{});
   const before=await call('/entries');
-  if(!external){await stop();await start();boot=await bootstrap();assert.deepEqual(await call('/entries'),before);assert.equal((await call('/possessions')).length,1);assert.equal((await call('/loans')).loans.some((l:{name:string})=>l.name==='验收贷款'),true);assert.equal((await call('/accounts')).accounts.some((a:{name:string;balance:number})=>a.name==='验收现金'&&a.balance===12345),true);}
+  if(!external){await stop();await start();boot=await bootstrap();assert.deepEqual(await call('/entries'),before);assert.equal((await call('/possessions')).length,1);assert.equal((await call('/loans')).loans.some((l:{name:string})=>l.name==='验收贷款'),true);assert.equal((await call('/accounts')).accounts.some((a:{name:string;balance:number})=>a.name==='验收现金'&&a.balance===12345),true);assert.equal((await call('/funds')).funds[0].shares,100000);}
   console.log(JSON.stringify({passed:true,url,mode:'fixed',modelConfigured:false,charts:3,entries:before.length,restarted:!external}));
 }finally{await stop();}
